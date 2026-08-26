@@ -35,4 +35,23 @@ export const config = {
   creditCost,
   pollIntervalMs: resolvePollIntervalMs(requestedPollIntervalMs, dailyCredits, creditCost),
   staleAfterMs: Number(process.env.STALE_AFTER_MS ?? 300_000),
+  databaseUrl:
+    process.env.DATABASE_URL ??
+    "postgres://aethera:aethera_password@localhost:55432/aethera",
+  /**
+   * Detection thresholds — PRODUCT_SPEC §26.4 requires these to be tunable. Defaults
+   * live in @aethera/anomaly-engine and were calibrated against real traffic; see the
+   * comment on AnomalyThresholds there before changing them.
+   */
+  anomalyThresholds: {
+    ...(process.env.ANOMALY_RAPID_DESCENT_FPM
+      ? { rapidDescentFpm: Number(process.env.ANOMALY_RAPID_DESCENT_FPM) }
+      : {}),
+    ...(process.env.ANOMALY_RAPID_CLIMB_FPM
+      ? { rapidClimbFpm: Number(process.env.ANOMALY_RAPID_CLIMB_FPM) }
+      : {}),
+    ...(process.env.ANOMALY_COOLDOWN_MS
+      ? { cooldownMs: Number(process.env.ANOMALY_COOLDOWN_MS) }
+      : {}),
+  },
 };

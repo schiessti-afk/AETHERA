@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BoundingBox, FlightState } from "@aethera/types";
+import type { AnomalySeverity, BoundingBox, FlightState } from "@aethera/types";
 import { dataAgeSeconds, interpolatePosition, positionConfidence } from "@aethera/flight-engine";
 import { mapStyleUrl } from "@/lib/config";
 import { flightStore } from "@/lib/flight-store";
@@ -16,8 +16,47 @@ const COLOR_GROUND: [number, number, number] = [93, 109, 130]; // --color-text-s
 const COLOR_HOVER: [number, number, number] = [232, 238, 246]; // --color-text
 const COLOR_SELECTED: [number, number, number] = [62, 224, 200]; // --color-accent
 const COLOR_STALE: [number, number, number] = [93, 109, 130];
+const COLOR_LABEL: [number, number, number] = [200, 212, 226];
+
+/** Design §8 alert hierarchy, matching the semantic tokens in packages/ui/src/styles.css. */
+const SEVERITY_COLOR: Record<AnomalySeverity, [number, number, number]> = {
+  critical: [224, 74, 74], // --color-danger
+  high: [224, 122, 62], // --color-alert
+  medium: [224, 180, 74], // --color-warning
+  info: [139, 155, 176], // --color-text-muted
+};
 
 const VIEWPORT_DEBOUNCE_MS = 350;
+
+/**
+ * Icon size by zoom — PRODUCT_SPEC §10.4 requires information density to change with
+ * zoom. At world view a global snapshot is ~12,000 aircraft, and drawing those at close-
+ * view size turns Europe into a solid mass of overlapping glyphs where nothing (an alert
+ * included) is findable. Shrinking the marker keeps every observed aircraft on screen —
+ * they are never culled, which would misrepresent what was observed — while restoring
+ * the shape of the traffic.
+ */
+function iconSizeForZoom(zoom: number): number {
+  if (zoom < 4) return 11;
+  if (zoom < 6) return 15;
+  if (zoom < 8) return 19;
+  return 22;
+}
+
+/** Below this zoom, callsign labels are never drawn: they cannot resolve. */
+const LABEL_MIN_ZOOM = 7;
+/**
+ * Even when zoomed in, labels are suppressed while too many aircraft are in view.
+ * §10.4: "when density is high, labels recede and selection/hover remains the path
+ * to detail".
+ */
+const LABEL_MAX_VISIBLE = 220;
+
+/** Follow mode camera pacing — see the note at the follow block in renderFrame. */
+const FOLLOW_MIN_INTERVAL_MS = 400;
+const FOLLOW_EASE_MS = 600;
+/** Only recentre once the aircraft has drifted this far off centre, in screen pixels. */
+const FOLLOW_RECENTRE_PX = 60;
 
 function boundsFromMap(map: import("maplibre-gl").Map): BoundingBox {
   const b = map.getBounds();
@@ -35,13 +74,14 @@ export function MapViewport() {
   const overlayRef = useRef<import("@deck.gl/mapbox").MapboxOverlay | null>(null);
   const rafRef = useRef<number | null>(null);
   const hoveredRef = useRef<string | null>(null);
+  const lastFollowMoveRef = useRef(0);
   const [is3D, setIs3D] = useState(true);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
 
   useFlightConnection();
-  const { selected, followed } = useFlightStore();
+  const { selected, followed, followLost } = useFlightStore();
 
   // --- Map + deck.gl overlay setup -----------------------------------------
   useEffect(() => {
@@ -53,7 +93,7 @@ export function MapViewport() {
     let viewportTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function createMap() {
-      const [maplibregl, { MapboxOverlay }, { IconLayer, LineLayer }] = await Promise.all([
+      const [maplibregl, { MapboxOverlay }, { IconLayer, LineLayer, TextLayer }] = await Promise.all([
         import("maplibre-gl"),
         import("@deck.gl/mapbox"),
         import("@deck.gl/layers"),
@@ -101,7 +141,25 @@ export function MapViewport() {
         if (cancelled) return;
         map.addControl(overlay as unknown as import("maplibre-gl").IControl);
         flightStore.setBounds(boundsFromMap(map));
-        startRenderLoop(IconLayer, LineLayer);
+        startRenderLoop(IconLayer, LineLayer, TextLayer);
+
+        // An alert clicked on the Alerts route parks a camera target before navigating
+        // here; claim it once the map can actually move.
+        const pending = flightStore.claimFlyTo();
+        if (pending) {
+          map.easeTo({
+            center: [pending.longitude, pending.latitude],
+            zoom: 9,
+            duration: 900,
+          });
+        }
+      });
+
+      // Taking hold of the map is an unambiguous request to look somewhere else, so it
+      // releases follow (§13: follow must never trap the user). `dragstart` only fires
+      // for real pointer interaction — our own easeTo does not trigger it.
+      map.on("dragstart", () => {
+        if (flightStore.getSnapshot().followed) flightStore.follow(null);
       });
 
       map.on("moveend", () => {
@@ -118,10 +176,11 @@ export function MapViewport() {
     function startRenderLoop(
       IconLayer: typeof import("@deck.gl/layers").IconLayer,
       LineLayer: typeof import("@deck.gl/layers").LineLayer,
+      TextLayer: typeof import("@deck.gl/layers").TextLayer,
     ) {
       const tick = () => {
         if (cancelled) return;
-        renderFrame(IconLayer, LineLayer);
+        renderFrame(IconLayer, LineLayer, TextLayer);
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -130,13 +189,15 @@ export function MapViewport() {
     function renderFrame(
       IconLayer: typeof import("@deck.gl/layers").IconLayer,
       LineLayer: typeof import("@deck.gl/layers").LineLayer,
+      TextLayer: typeof import("@deck.gl/layers").TextLayer,
     ) {
       const overlay = overlayRef.current;
       const map = mapRef.current;
       if (!overlay || !map) return;
 
       const now = Date.now();
-      const { aircraft, selected, followed, hovered, trailVisible } = flightStore.getSnapshot();
+      const { aircraft, selected, followed, hovered, trailVisible, alerted } =
+        flightStore.getSnapshot();
       const visible = applyFilters(Array.from(aircraft.values()), filtersRef.current);
 
       type RenderPoint = {
@@ -145,6 +206,9 @@ export function MapViewport() {
         confidence: number;
         stale: boolean;
       };
+
+      const zoom = map.getZoom();
+      const baseSize = iconSizeForZoom(zoom);
 
       const points: RenderPoint[] = visible.map((flight) => {
         const pos = interpolatePosition(flight, now);
@@ -166,11 +230,19 @@ export function MapViewport() {
         getIcon: () => "aircraft",
         sizeUnits: "pixels",
         getPosition: (d) => d.position,
-        getSize: (d) => (d.flight.icao24 === selected ? 30 : d.flight.icao24 === followed ? 30 : 22),
-        // deck.gl IconLayer rotates clockwise from the icon's own up axis; our glyph
-        // is drawn north-up, and `heading` is compass degrees. Unverified against a
-        // live feed (no OpenSky access in this environment) — check against real
-        // traffic and flip the sign if aircraft appear to fly backwards.
+        getSize: (d) => {
+          if (d.flight.icao24 === selected || d.flight.icao24 === followed) {
+            return baseSize + 8;
+          }
+          // Alerted aircraft get a modest size bump so they stay findable in dense
+          // traffic without turning into the loudest thing on the map (Design §25).
+          return alerted.has(d.flight.icao24) ? baseSize + 5 : baseSize;
+        },
+        // deck.gl IconLayer rotates counter-clockwise from the icon's own up axis; our
+        // glyph is drawn north-up and `heading` is compass degrees, hence the negation.
+        // Verified against live traffic: BAW60 (309°), RYR6DX (305°) and EXS64G (310°)
+        // all render pointing north-west while UAE93P (114°) points south-east. A flipped
+        // sign would have drawn those north-west aircraft at 51°, i.e. north-east.
         getAngle: (d) => 360 - (d.flight.heading ?? 0),
         getColor: (d) => {
           const alpha = Math.round(255 * (d.flight.onGround ? 0.55 : 1) * (d.stale ? 0.6 : 1) * Math.max(0.35, d.confidence));
@@ -178,12 +250,16 @@ export function MapViewport() {
             return [...COLOR_SELECTED, alpha];
           }
           if (d.flight.icao24 === hovered) return [...COLOR_HOVER, alpha];
+          // Alert state outranks stale/ground styling: an aircraft with something open
+          // against it should not be visually demoted for also being quiet (§11.3).
+          const severity = alerted.get(d.flight.icao24);
+          if (severity) return [...SEVERITY_COLOR[severity], Math.max(alpha, 200)];
           if (d.stale) return [...COLOR_STALE, alpha];
           return [...(d.flight.onGround ? COLOR_GROUND : COLOR_DEFAULT), alpha];
         },
         updateTriggers: {
-          getColor: [selected, followed, hovered],
-          getSize: [selected, followed],
+          getColor: [selected, followed, hovered, alerted],
+          getSize: [selected, followed, alerted, baseSize],
         },
         onClick: (info) => {
           const flight = (info.object as RenderPoint | null)?.flight;
@@ -199,6 +275,55 @@ export function MapViewport() {
       });
 
       const layers: import("@deck.gl/core").Layer[] = [iconLayer];
+
+      // Callsign labels appear only once the view is close enough to read them and
+      // sparse enough that they will not collide into noise (§10.4). Altitude joins
+      // the label at close view, where there is room for it.
+      const labelsVisible = zoom >= LABEL_MIN_ZOOM && points.length <= LABEL_MAX_VISIBLE;
+      if (labelsVisible) {
+        const closeView = zoom >= 9;
+        const labelled = points.filter((d) => d.flight.callsign || closeView);
+        layers.push(
+          new TextLayer<RenderPoint>({
+            id: "aircraft-labels",
+            data: labelled,
+            pickable: false,
+            getPosition: (d) => d.position,
+            getText: (d) => {
+              const callsign = d.flight.callsign ?? d.flight.icao24.toUpperCase();
+              if (!closeView) return callsign;
+              const altitude =
+                d.flight.altitude != null
+                  ? `${Math.round(d.flight.altitude * 3.28084).toLocaleString()} ft`
+                  : "—";
+              return `${callsign}\n${altitude}`;
+            },
+            getSize: 11,
+            sizeUnits: "pixels",
+            getColor: (d) =>
+              d.flight.icao24 === selected || d.flight.icao24 === followed
+                ? [...COLOR_SELECTED, 255]
+                : [...COLOR_LABEL, 190],
+            getPixelOffset: [0, -(baseSize / 2 + 9)],
+            getTextAnchor: "middle",
+            getAlignmentBaseline: "bottom",
+            // A concrete stack, not var(--font-sans): deck.gl builds its glyph atlas with
+            // canvas measureText, where a CSS custom property does not resolve and the
+            // layer silently renders nothing.
+            fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+            fontWeight: 500,
+            characterSet: "auto",
+            outlineWidth: 2,
+            outlineColor: [7, 9, 13, 220],
+            fontSettings: { sdf: true },
+            updateTriggers: {
+              getText: [closeView],
+              getColor: [selected, followed],
+              getPixelOffset: [baseSize],
+            },
+          }),
+        );
+      }
 
       const trailId = trailVisible ? (selected ?? followed) : null;
       if (trailId) {
@@ -225,11 +350,26 @@ export function MapViewport() {
 
       overlay.setProps({ layers });
 
-      // Follow mode: keep the camera on the followed aircraft without fighting user drag.
+      // Follow mode. This used to jumpTo() on every animation frame, which pinned the
+      // camera 60 times a second: the map could not be panned at all and the motion read
+      // as a judder rather than a follow. Now the camera is only nudged when the aircraft
+      // has drifted meaningfully off centre, and it eases rather than snaps.
       if (followed) {
         const followedPoint = points.find((p) => p.flight.icao24 === followed);
-        if (followedPoint) {
-          map.jumpTo({ center: followedPoint.position });
+        if (followedPoint && now - lastFollowMoveRef.current > FOLLOW_MIN_INTERVAL_MS) {
+          const centre = map.getCenter();
+          const offsetPx = Math.hypot(
+            map.project(followedPoint.position).x - map.project(centre).x,
+            map.project(followedPoint.position).y - map.project(centre).y,
+          );
+          if (offsetPx > FOLLOW_RECENTRE_PX) {
+            lastFollowMoveRef.current = now;
+            map.easeTo({
+              center: followedPoint.position,
+              duration: FOLLOW_EASE_MS,
+              essential: true,
+            });
+          }
         }
       }
     }
@@ -265,6 +405,22 @@ export function MapViewport() {
       <div ref={containerRef} className="absolute inset-0" />
 
       <CommandPalette onSelectAircraft={(icao24) => flightStore.select(icao24)} onFlyTo={flyTo} />
+
+      {followLost ? (
+        <div
+          role="status"
+          className="absolute left-1/2 top-3 z-[var(--z-panels)] -translate-x-1/2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)] shadow-[var(--shadow-panel)]"
+        >
+          Contact lost with {followLost.icao24.toUpperCase()} · follow ended
+          <button
+            type="button"
+            onClick={() => flightStore.clearFollowLost()}
+            className="ml-3 text-[var(--color-text-subtle)] hover:text-[var(--color-text)]"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <div className="absolute left-3 top-3 z-[var(--z-controls)]">
         <FilterBar filters={filters} onChange={setFilters} />

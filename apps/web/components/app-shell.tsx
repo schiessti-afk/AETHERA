@@ -35,12 +35,14 @@ export function AppShell({
   status = "CONNECTING",
   observed = 0,
   airborne = 0,
+  alerts = 0,
   nextPollEtaMs = null,
 }: {
   children: ReactNode;
   status?: ConnectionStatus;
   observed?: number;
   airborne?: number;
+  alerts?: number;
   nextPollEtaMs?: number | null;
 }) {
   const pathname = usePathname();
@@ -114,6 +116,12 @@ export function AppShell({
           </strong>
           Airborne
         </span>
+        {alerts > 0 ? (
+          <Link href="/alerts" className="text-[var(--color-alert)] hover:underline">
+            <strong className="mr-2 tabular-nums">{alerts.toLocaleString()}</strong>
+            {alerts === 1 ? "Alert" : "Alerts"}
+          </Link>
+        ) : null}
         {etaLabel ? (
           <span className="hidden text-[var(--color-text-subtle)] normal-case tracking-normal sm:inline">
             {etaLabel}

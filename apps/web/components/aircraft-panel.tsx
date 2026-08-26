@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { X, Locate, Route, Crosshair } from "lucide-react";
+import type { AircraftMetadata } from "@aethera/types";
+import { fetchAircraftDetail } from "@/lib/api";
 import { Panel } from "@aethera/ui";
 import { dataAgeSeconds } from "@aethera/flight-engine";
 import { flightStore } from "@/lib/flight-store";
@@ -39,8 +42,29 @@ export function AircraftPanel({
   onFollow: () => void;
   onRecenter: (longitude: number, latitude: number) => void;
 }) {
-  const { aircraft, trailVisible } = useFlightStore();
+  const { aircraft, trailVisible, alerted } = useFlightStore();
   const flight = aircraft.get(icao24);
+  const [metadata, setMetadata] = useState<AircraftMetadata | null>(null);
+
+  // Registry identity is fetched per selection and kept out of the live store: it is
+  // reference data about the airframe, not part of the observed telemetry stream.
+  useEffect(() => {
+    let cancelled = false;
+    setMetadata(null);
+    fetchAircraftDetail(icao24)
+      .then((detail) => {
+        if (!cancelled) setMetadata(detail.metadata);
+      })
+      .catch(() => {
+        if (!cancelled) setMetadata(null); // metadata is optional by design
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [icao24]);
+  // A selected aircraft renders in the selection colour, which masks its alert colour
+  // on the map — so if something is open against it, the panel has to say so.
+  const alertSeverity = alerted.get(icao24);
 
   if (!flight) {
     return (
@@ -89,6 +113,18 @@ export function AircraftPanel({
         ) : null}
       </div>
 
+      {alertSeverity ? (
+        <div
+          className={`mb-3 rounded-[var(--radius-sm)] border px-2 py-1.5 text-[11px] uppercase tracking-[0.14em] ${
+            alertSeverity === "critical"
+              ? "border-[var(--color-danger)] text-[var(--color-danger)]"
+              : "border-[var(--color-alert)] text-[var(--color-alert)]"
+          }`}
+        >
+          Detected condition active
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Altitude" value={formatAltitude(flight.altitude)} />
         <Field label="Speed" value={formatSpeed(flight.velocity)} />
@@ -97,6 +133,23 @@ export function AircraftPanel({
       </div>
 
       <div className="my-3 border-t border-[var(--color-border)]" />
+
+      {metadata && (metadata.registration || metadata.typeCode || metadata.operator) ? (
+        <div className="mb-3 grid grid-cols-2 gap-3 text-[13px]">
+          <Field label="Registration" value={formatOrDash(metadata.registration)} />
+          <Field label="Type" value={formatOrDash(metadata.typeCode)} />
+          {metadata.operator ? (
+            <div className="col-span-2">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">
+                Operator
+              </div>
+              <div className="truncate text-[13px] text-[var(--color-text)]">
+                {metadata.operator}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 text-[13px]">
         <Field label="ICAO24" value={flight.icao24.toUpperCase()} />

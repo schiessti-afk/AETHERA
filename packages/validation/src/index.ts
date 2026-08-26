@@ -50,6 +50,17 @@ export const viewportSubscribeSchema = z.object({
   bounds: boundingBoxSchema,
 });
 
+/**
+ * A client declaring which aircraft it currently has selected or followed. This is what
+ * scopes LOST_SIGNAL detection: globally, hundreds of airborne aircraft leave receiver
+ * coverage every poll, so signal loss is only worth alerting on for an aircraft someone
+ * is actually looking at.
+ */
+export const aircraftWatchSchema = z.object({
+  type: z.literal("aircraft.watch"),
+  icao24: z.string().min(1).max(12).nullable(),
+});
+
 export function isValidLatitude(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
 }

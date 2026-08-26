@@ -21,7 +21,7 @@ async function main() {
   await app.register(aircraftRoutes, { redis });
   await app.register(airportRoutes);
   await app.register(searchRoutes, { redis });
-  await app.register(anomalyRoutes);
+  await app.register(anomalyRoutes, { redis });
   await app.register(websocketRoutes, { redis });
 
   try {

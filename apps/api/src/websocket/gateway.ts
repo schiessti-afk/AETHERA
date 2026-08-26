@@ -1,11 +1,24 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { BoundingBox, FlightState } from "@aethera/types";
-import { inBoundingBox, viewportSubscribeSchema } from "@aethera/validation";
+import {
+  aircraftWatchSchema,
+  inBoundingBox,
+  viewportSubscribeSchema,
+} from "@aethera/validation";
 import { KEYS, type RedisClient } from "../modules/redis";
 
 interface SocketState {
   bounds: BoundingBox | null;
+  watching: string | null;
 }
+
+/**
+ * How long a declared watch stays live in Redis. Clients refresh on every snapshot they
+ * receive (once per poll), so this only has to outlast a couple of cycles — and because
+ * it expires on its own, a client that disconnects or crashes stops holding
+ * LOST_SIGNAL scope open without needing any disconnect bookkeeping.
+ */
+const WATCH_TTL_MS = 5 * 60_000;
 
 export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (
   app,
@@ -26,6 +39,14 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
       : aircraft;
   }
 
+  async function registerWatch(icao24: string | null): Promise<void> {
+    if (!icao24) return;
+    await opts.redis.zAdd(KEYS.watched, {
+      score: Date.now() + WATCH_TTL_MS,
+      value: icao24.toLowerCase(),
+    });
+  }
+
   function sendSnapshot(
     socket: { send: (payload: string) => void; state: SocketState },
     aircraft: FlightState[],
@@ -40,7 +61,32 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
     );
   }
 
-  await subscriber.subscribe(KEYS.events, async () => {
+  await subscriber.subscribe(KEYS.events, async (raw) => {
+    // Anomaly events share this channel with flight updates. They must be forwarded as
+    // themselves rather than triggering a snapshot resend — a busy cycle raises dozens
+    // of detections, and resending ~12k aircraft for each one would be pathological.
+    let type: string | undefined;
+    let payload: unknown;
+    try {
+      const parsed = JSON.parse(String(raw)) as { type?: string; data?: unknown };
+      type = parsed.type;
+      payload = parsed.data;
+    } catch {
+      return;
+    }
+
+    if (type === "anomaly.detected" || type === "anomaly.resolved") {
+      const message = JSON.stringify({
+        type,
+        timestamp: new Date().toISOString(),
+        data: payload,
+      });
+      for (const socket of sockets) socket.send(message);
+      return;
+    }
+
+    if (type !== "flight.updated") return;
+
     const aircraft = await currentAircraft();
     for (const socket of sockets) {
       sendSnapshot(socket, aircraft);
@@ -49,7 +95,7 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
 
   app.get("/ws", { websocket: true }, (socket) => {
     const client = {
-      state: { bounds: null } as SocketState,
+      state: { bounds: null, watching: null } as SocketState,
       send(payload: string) {
         if (socket.readyState === socket.OPEN) {
           socket.send(payload);
@@ -62,14 +108,24 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
     void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
 
     socket.on("message", (raw: Buffer | string) => {
+      let message: unknown;
       try {
-        const parsed = viewportSubscribeSchema.safeParse(JSON.parse(String(raw)));
-        if (parsed.success) {
-          client.state.bounds = parsed.data.bounds;
-          void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
-        }
+        message = JSON.parse(String(raw));
       } catch {
-        // ignore malformed client messages
+        return; // ignore malformed client messages
+      }
+
+      const viewport = viewportSubscribeSchema.safeParse(message);
+      if (viewport.success) {
+        client.state.bounds = viewport.data.bounds;
+        void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
+        return;
+      }
+
+      const watch = aircraftWatchSchema.safeParse(message);
+      if (watch.success) {
+        client.state.watching = watch.data.icao24;
+        void registerWatch(watch.data.icao24);
       }
     });
 

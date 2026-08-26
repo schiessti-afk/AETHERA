@@ -3,6 +3,7 @@ import { OpenSkyProvider } from "../providers/opensky";
 import { OpenSkyRateLimitError } from "../providers/rate-limit-error";
 import { validateStates } from "../normalizer";
 import { RedisPublisher } from "../publisher/redis";
+import type { AnomalyDetector } from "../anomaly/detector";
 
 export class Poller {
   private timer: NodeJS.Timeout | null = null;
@@ -14,6 +15,7 @@ export class Poller {
     private readonly publisher: RedisPublisher,
     private readonly intervalMs: number,
     private readonly bounds?: BoundingBox,
+    private readonly detector?: AnomalyDetector,
   ) {}
 
   start(): void {
@@ -43,10 +45,25 @@ export class Poller {
     try {
       const snapshot = await this.provider.fetchSnapshot(this.bounds);
       const states = validateStates(snapshot.states);
-      await this.publisher.mergeSnapshot(states, snapshot.sourceTime, snapshot.creditsRemaining);
+      const { previous } = await this.publisher.mergeSnapshot(
+        states,
+        snapshot.sourceTime,
+        snapshot.creditsRemaining,
+      );
       const remaining =
         snapshot.creditsRemaining != null ? ` credits=${snapshot.creditsRemaining}` : "";
       console.log(`ingestion: stored ${states.length} observed aircraft${remaining}`);
+
+      // Detection runs after the snapshot is stored: a failure here must not cost us
+      // the live picture, which is the product's primary obligation.
+      if (this.detector) {
+        try {
+          await this.detector.run(states, previous);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`ingestion: anomaly detection failed: ${message}`);
+        }
+      }
     } catch (error) {
       if (error instanceof OpenSkyRateLimitError) {
         nextDelay = Math.max(this.intervalMs, error.retryAfterSeconds * 1000);

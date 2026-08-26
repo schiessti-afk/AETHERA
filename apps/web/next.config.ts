@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
     "@aethera/types",
     "@aethera/validation",
     "@aethera/flight-engine",
+    "@aethera/anomaly-engine",
   ],
 };
 

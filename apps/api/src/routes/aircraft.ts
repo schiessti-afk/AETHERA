@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { FlightState, SystemStats } from "@aethera/types";
+import type { AircraftMetadata, FlightState, SystemStats } from "@aethera/types";
 import { aircraftQuerySchema, inBoundingBox } from "@aethera/validation";
 import { KEYS, type RedisClient } from "../modules/redis";
+import { pool } from "../modules/postgres";
 
 function parseStates(raw: Record<string, string>): FlightState[] {
   const states: FlightState[] = [];
@@ -68,12 +69,61 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
   });
 
   app.get<{ Params: { icao24: string } }>("/api/aircraft/:icao24", async (request, reply) => {
-    const raw = await opts.redis.hGet(KEYS.state, request.params.icao24.toLowerCase());
+    const icao24 = request.params.icao24.toLowerCase();
+    const raw = await opts.redis.hGet(KEYS.state, icao24);
     if (!raw) {
       return reply.code(404).send({ error: "Aircraft not currently observed" });
     }
-    return JSON.parse(raw) as FlightState;
+
+    const state = JSON.parse(raw) as FlightState;
+
+    // Registry metadata is strictly secondary to telemetry (§24.4) — if the lookup
+    // fails, the observed state is still returned rather than failing the request.
+    let metadata: AircraftMetadata | null = null;
+    try {
+      const result = await pool.query(
+        `SELECT registration, type_code AS "typeCode", operator
+           FROM aircraft WHERE icao24 = $1`,
+        [icao24],
+      );
+      metadata = (result.rows[0] as AircraftMetadata | undefined) ?? null;
+    } catch {
+      metadata = null;
+    }
+
+    return { ...state, metadata };
   });
+
+  app.get<{ Params: { icao24: string } }>(
+    "/api/aircraft/:icao24/trail",
+    async (request) => {
+      // Positions recorded by ingestion from observed snapshots — never OpenSky /tracks,
+      // which draws from a separate credit bucket reserved for History (ARCH §25.1).
+      const raw = await opts.redis.lRange(
+        `trail:${request.params.icao24.toLowerCase()}`,
+        0,
+        -1,
+      );
+
+      const points = raw
+        .map((entry) => {
+          const [lon, lat, alt, ts] = entry.split(",");
+          const longitude = Number(lon);
+          const latitude = Number(lat);
+          const timestamp = Number(ts);
+          if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+          return {
+            longitude,
+            latitude,
+            altitude: alt === "" ? null : Number(alt),
+            timestamp,
+          };
+        })
+        .filter((p): p is NonNullable<typeof p> => p !== null);
+
+      return { icao24: request.params.icao24.toLowerCase(), points, count: points.length };
+    },
+  );
 
   app.get("/api/stats", async () => {
     const raw = await opts.redis.hGetAll(KEYS.state);
