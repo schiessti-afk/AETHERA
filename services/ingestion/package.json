@@ -8,10 +8,14 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../..",
-    "import:registry": "tsx src/scripts/import-aircraft-registry.ts"
+    "import:registry": "tsx src/scripts/import-aircraft-registry.ts",
+    "import:airports": "tsx src/scripts/import-airports.ts",
+    "migrate": "tsx src/scripts/migrate.ts",
+    "inject:squawk": "tsx src/scripts/inject-test-squawk.ts"
   },
   "dependencies": {
     "@aethera/anomaly-engine": "workspace:*",
+    "@aethera/flight-engine": "workspace:*",
     "@aethera/types": "workspace:*",
     "@aethera/validation": "workspace:*",
     "dotenv": "^16.4.7",

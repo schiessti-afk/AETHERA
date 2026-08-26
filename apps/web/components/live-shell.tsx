@@ -15,6 +15,8 @@ export function LiveShell({ children }: { children: ReactNode }) {
       observed={stats.observed}
       airborne={stats.airborne}
       alerts={alerted.size}
+      climbing={stats.climbing}
+      descending={stats.descending}
       nextPollEtaMs={nextPollEtaMs}
     >
       <StatusBanner status={status} lastError={stats.lastError} onRetry={retry} />

@@ -14,7 +14,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
       - ./database/migrations/002_anomaly_kind.sql:/docker-entrypoint-initdb.d/002_anomaly_kind.sql
-      - ./database/seeds/001_airports.sql:/docker-entrypoint-initdb.d/003_airports.sql
+      - ./database/migrations/003_phase3_context.sql:/docker-entrypoint-initdb.d/003_phase3_context.sql
+      - ./database/seeds/001_airports.sql:/docker-entrypoint-initdb.d/004_airports.sql
     ports:
       - "${POSTGRES_PORT:-55432}:5432"
     healthcheck:

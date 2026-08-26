@@ -109,3 +109,10 @@ export function positionConfidence(ageSeconds: number): number {
   if (ageSeconds >= STALE_AFTER_S) return 0.35;
   return 1 - 0.65 * (ageSeconds / STALE_AFTER_S);
 }
+export { distanceKm, boundingBoxAround } from "./geo";
+export {
+  summariseAirspace,
+  ALTITUDE_BANDS_FT,
+  SPEED_BANDS_KT,
+  LEVEL_FPM,
+} from "./aggregate";

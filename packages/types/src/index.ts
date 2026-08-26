@@ -68,13 +68,36 @@ export interface AircraftQuery {
 
 export interface Airport {
   icao: string;
-  iata?: string;
+  iata?: string | null;
   name: string;
-  city?: string;
-  country?: string;
+  city?: string | null;
+  country?: string | null;
   latitude: number;
   longitude: number;
-  elevation?: number;
+  elevation?: number | null;
+  /** OurAirports classification: large_airport | medium_airport | small_airport. */
+  type?: string | null;
+  scheduledService?: boolean;
+}
+
+/** Band counts keyed by the band's lower bound. */
+export type BandHistogram = Record<string, number>;
+
+/**
+ * A single observation of the whole airspace. Aggregate only — never per-aircraft
+ * positions, which stay out of PostgreSQL by design (ARCHITECTURE §18).
+ */
+export interface AirspaceSample {
+  observedAt: string;
+  observed: number;
+  airborne: number;
+  onGround: number;
+  climbing: number;
+  descending: number;
+  level: number;
+  altitudeBands: BandHistogram;
+  speedBands: BandHistogram;
+  activeAnomalies: number;
 }
 
 export type AnomalyType =
@@ -145,6 +168,8 @@ export interface SystemStats {
   observed: number;
   airborne: number;
   onGround: number;
+  climbing: number;
+  descending: number;
   lastUpdate: string | null;
   sourceTime: string | null;
   creditsRemaining: number | null;

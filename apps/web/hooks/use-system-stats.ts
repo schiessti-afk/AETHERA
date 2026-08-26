@@ -8,6 +8,8 @@ const empty: SystemStats = {
   observed: 0,
   airborne: 0,
   onGround: 0,
+  climbing: 0,
+  descending: 0,
   lastUpdate: null,
   sourceTime: null,
   creditsRemaining: null,

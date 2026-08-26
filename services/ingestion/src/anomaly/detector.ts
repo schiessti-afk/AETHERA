@@ -18,7 +18,8 @@ export class AnomalyDetector {
     private readonly thresholds: Partial<AnomalyThresholds>,
   ) {}
 
-  async run(flights: FlightState[], previous: FlightState[]): Promise<void> {
+  /** Returns the number of state conditions left open after this cycle. */
+  async run(flights: FlightState[], previous: FlightState[]): Promise<number> {
     const state = await this.store.loadState();
 
     const result = evaluateSnapshot({
@@ -39,11 +40,15 @@ export class AnomalyDetector {
 
     await this.publisher.publishAnomalies(result.detected, result.resolved);
 
+    const active = Object.keys(result.active).length;
+
     if (result.detected.length > 0 || result.resolved.length > 0) {
       console.log(
         `ingestion: anomalies +${result.detected.length} -${result.resolved.length} ` +
-          `(${Object.keys(result.active).length} active)`,
+          `(${active} active)`,
       );
     }
+
+    return active;
   }
 }

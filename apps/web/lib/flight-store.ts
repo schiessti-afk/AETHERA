@@ -9,7 +9,7 @@ import type {
 } from "@aethera/types";
 import { STALE_AFTER_S, REMOVE_AFTER_S } from "@aethera/flight-engine";
 import { wsUrl } from "./config";
-import { fetchTrail } from "./api";
+import { fetchAnomalies, fetchTrail } from "./api";
 
 const TRAIL_MAX_POINTS = 120;
 /** Only the selected/followed aircraft gets a trail — spec §14.3. */
@@ -195,6 +195,11 @@ export class FlightStore {
     socket.onopen = () => {
       this.reconnectAttempt = 0;
       if (this.bounds) this.send({ type: "viewport.subscribe", bounds: this.bounds });
+      // Anomaly events only arrive as they happen, so a client that connects while
+      // conditions are already open would show none of them until the next change.
+      // Read the current set once so the map and the alert count start out correct
+      // without the user having to visit the Alerts surface first.
+      void this.loadOpenAlerts();
     };
 
     socket.onmessage = (event) => {
@@ -273,6 +278,15 @@ export class FlightStore {
       alerted.delete(anomaly.icao24);
     }
     this.patch({ alerted });
+  }
+
+  private async loadOpenAlerts(): Promise<void> {
+    try {
+      const feed = await fetchAnomalies();
+      this.seedAlerts(feed.anomalies);
+    } catch {
+      // Highlighting is supplementary; live flight state must not depend on it.
+    }
   }
 
   /** Replaces map highlighting wholesale from an authoritative feed read. */

@@ -10,6 +10,12 @@ export const KEYS = {
   events: "aethera:events",
 } as const;
 
+/**
+ * Development-only hook for exercising the emergency-squawk path on demand.
+ * See scripts/inject-test-squawk.ts. Never read when NODE_ENV is production.
+ */
+export const TEST_INJECT_KEY = "test:inject:squawk";
+
 /** Per-aircraft recent path, capped and expiring. `trail:{icao24}`. */
 export const trailKey = (icao24: string) => `trail:${icao24}`;
 
@@ -142,6 +148,18 @@ export class RedisPublisher {
         data: anomaly,
       };
       await this.redis.publish(KEYS.events, JSON.stringify(event));
+    }
+  }
+
+  /** Reads and clears a queued synthetic squawk request (development only). */
+  async takeTestInjection(): Promise<{ icao24: string; squawk: string } | null> {
+    const raw = await this.redis.get(TEST_INJECT_KEY);
+    if (!raw) return null;
+    await this.redis.del(TEST_INJECT_KEY);
+    try {
+      return JSON.parse(raw) as { icao24: string; squawk: string };
+    } catch {
+      return null;
     }
   }
 

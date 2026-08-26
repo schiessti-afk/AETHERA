@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aethera/flight-engine": "workspace:*",
     "@aethera/types": "workspace:*",
     "@aethera/validation": "workspace:*",
     "@fastify/cors": "^10.0.2",

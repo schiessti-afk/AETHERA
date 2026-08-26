@@ -7,6 +7,7 @@ import { Poller } from "./polling/poller";
 import { KEYS } from "./publisher/redis";
 import { AnomalyStore } from "./anomaly/store";
 import { AnomalyDetector } from "./anomaly/detector";
+import { AirspaceSampler } from "./analytics/sampler";
 
 async function main() {
   const redis = createClient({ url: config.redisUrl });
@@ -38,6 +39,7 @@ async function main() {
     config.pollIntervalMs,
     config.bounds,
     detector,
+    new AirspaceSampler(pool),
   );
 
   poller.start();

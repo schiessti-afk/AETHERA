@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AnomalySeverity, BoundingBox, FlightState } from "@aethera/types";
+import type { Airport, AnomalySeverity, BoundingBox, FlightState } from "@aethera/types";
 import { dataAgeSeconds, interpolatePosition, positionConfidence } from "@aethera/flight-engine";
 import { mapStyleUrl } from "@/lib/config";
 import { flightStore } from "@/lib/flight-store";
@@ -10,6 +10,8 @@ import { AIRCRAFT_ICON_ATLAS, AIRCRAFT_ICON_MAPPING } from "@/lib/aircraft-icon"
 import { AircraftPanel } from "@/components/aircraft-panel";
 import { FilterBar, type Filters, defaultFilters, applyFilters } from "@/components/filter-bar";
 import { CommandPalette } from "@/components/command-palette";
+import { fetchAirports } from "@/lib/api";
+import { AirportPeek } from "@/components/airport-peek";
 
 const COLOR_DEFAULT: [number, number, number] = [139, 155, 176]; // --color-text-muted
 const COLOR_GROUND: [number, number, number] = [93, 109, 130]; // --color-text-subtle
@@ -52,6 +54,14 @@ const LABEL_MIN_ZOOM = 7;
  */
 const LABEL_MAX_VISIBLE = 220;
 
+/**
+ * Airports only appear once the view is regional or closer. PRODUCT_SPEC §19.3 requires
+ * markers "at appropriate zoom levels" that "remain secondary to aircraft" — at world
+ * view they would be thousands of dots competing with the traffic they exist to anchor.
+ */
+const AIRPORT_MIN_ZOOM = 6;
+const COLOR_AIRPORT: [number, number, number] = [120, 140, 165];
+
 /** Follow mode camera pacing — see the note at the follow block in renderFrame. */
 const FOLLOW_MIN_INTERVAL_MS = 400;
 const FOLLOW_EASE_MS = 600;
@@ -76,6 +86,15 @@ export function MapViewport() {
   const hoveredRef = useRef<string | null>(null);
   const lastFollowMoveRef = useRef(0);
   const [is3D, setIs3D] = useState(true);
+  // Density is off by default — PRODUCT_SPEC §17.3 and Design §28: it sits under the
+  // aircraft, stays subtle, and is opt-in rather than something the user must dismiss.
+  const [densityOn, setDensityOn] = useState(false);
+  const densityRef = useRef(densityOn);
+  densityRef.current = densityOn;
+  // Airports in view, fetched per viewport. Kept in a ref because the render loop reads
+  // them every frame and they must not drive React re-renders.
+  const airportsRef = useRef<Airport[]>([]);
+  const [peeked, setPeeked] = useState<Airport | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -93,10 +112,16 @@ export function MapViewport() {
     let viewportTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function createMap() {
-      const [maplibregl, { MapboxOverlay }, { IconLayer, LineLayer, TextLayer }] = await Promise.all([
+      const [
+        maplibregl,
+        { MapboxOverlay },
+        { IconLayer, LineLayer, TextLayer, ScatterplotLayer },
+        { HeatmapLayer },
+      ] = await Promise.all([
         import("maplibre-gl"),
         import("@deck.gl/mapbox"),
         import("@deck.gl/layers"),
+        import("@deck.gl/aggregation-layers"),
       ]);
       const { Map } = maplibregl;
       if (cancelled || !container) return;
@@ -140,8 +165,10 @@ export function MapViewport() {
       map.on("load", () => {
         if (cancelled) return;
         map.addControl(overlay as unknown as import("maplibre-gl").IControl);
-        flightStore.setBounds(boundsFromMap(map));
-        startRenderLoop(IconLayer, LineLayer, TextLayer);
+        const initialBounds = boundsFromMap(map);
+        flightStore.setBounds(initialBounds);
+        void loadAirports(map, initialBounds);
+        startRenderLoop(IconLayer, LineLayer, TextLayer, HeatmapLayer, ScatterplotLayer);
 
         // An alert clicked on the Alerts route parks a camera target before navigating
         // here; claim it once the map can actually move.
@@ -165,7 +192,10 @@ export function MapViewport() {
       map.on("moveend", () => {
         if (viewportTimer) clearTimeout(viewportTimer);
         viewportTimer = setTimeout(() => {
-          if (!cancelled) flightStore.setBounds(boundsFromMap(map));
+          if (cancelled) return;
+          const bounds = boundsFromMap(map);
+          flightStore.setBounds(bounds);
+          void loadAirports(map, bounds);
         }, VIEWPORT_DEBOUNCE_MS);
       });
 
@@ -173,14 +203,39 @@ export function MapViewport() {
       resizeObserver.observe(container);
     }
 
+    /**
+     * Airports are only worth fetching for the visible area, and only once the view is
+     * close enough for them to be secondary to aircraft rather than clutter (§19.3).
+     */
+    async function loadAirports(
+      map: import("maplibre-gl").Map,
+      bounds: BoundingBox,
+    ): Promise<void> {
+      if (map.getZoom() < AIRPORT_MIN_ZOOM) {
+        airportsRef.current = [];
+        return;
+      }
+      try {
+        const { airports } = await fetchAirports({
+          bbox: `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
+          limit: 120,
+        });
+        if (!cancelled) airportsRef.current = airports;
+      } catch {
+        // An airport overlay is supplementary; the map still works without it.
+      }
+    }
+
     function startRenderLoop(
       IconLayer: typeof import("@deck.gl/layers").IconLayer,
       LineLayer: typeof import("@deck.gl/layers").LineLayer,
       TextLayer: typeof import("@deck.gl/layers").TextLayer,
+      HeatmapLayer: typeof import("@deck.gl/aggregation-layers").HeatmapLayer,
+      ScatterplotLayer: typeof import("@deck.gl/layers").ScatterplotLayer,
     ) {
       const tick = () => {
         if (cancelled) return;
-        renderFrame(IconLayer, LineLayer, TextLayer);
+        renderFrame(IconLayer, LineLayer, TextLayer, HeatmapLayer, ScatterplotLayer);
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -190,6 +245,8 @@ export function MapViewport() {
       IconLayer: typeof import("@deck.gl/layers").IconLayer,
       LineLayer: typeof import("@deck.gl/layers").LineLayer,
       TextLayer: typeof import("@deck.gl/layers").TextLayer,
+      HeatmapLayer: typeof import("@deck.gl/aggregation-layers").HeatmapLayer,
+      ScatterplotLayer: typeof import("@deck.gl/layers").ScatterplotLayer,
     ) {
       const overlay = overlayRef.current;
       const map = mapRef.current;
@@ -274,7 +331,91 @@ export function MapViewport() {
         },
       });
 
-      const layers: import("@deck.gl/core").Layer[] = [iconLayer];
+      const layers: import("@deck.gl/core").Layer[] = [];
+
+      // Density goes in first so it renders beneath the aircraft (Design §28). It is
+      // built from the same observed positions already on screen rather than a separate
+      // fetch, so it can never disagree with the markers drawn on top of it.
+      if (densityRef.current && points.length > 0) {
+        layers.push(
+          new HeatmapLayer<RenderPoint>({
+            id: "density",
+            data: points.filter((d) => !d.flight.onGround),
+            getPosition: (d) => d.position,
+            getWeight: 1,
+            radiusPixels: 45,
+            intensity: 1,
+            // Kept deliberately dim: the goal is to reveal where the airspace is busy,
+            // not to turn the map into a bright heatmap.
+            threshold: 0.06,
+            opacity: 0.35,
+            colorRange: [
+              [62, 224, 200, 0],
+              [62, 224, 200, 60],
+              [78, 205, 196, 110],
+              [224, 180, 74, 150],
+              [224, 122, 62, 180],
+              [224, 74, 74, 205],
+            ],
+            aggregation: "SUM",
+          }),
+        );
+      }
+
+      // Airports sit below the aircraft so they read as ground anchors rather than
+      // competing with live traffic (§19.3).
+      const airports = zoom >= AIRPORT_MIN_ZOOM ? airportsRef.current : [];
+      if (airports.length > 0) {
+        layers.push(
+          new ScatterplotLayer<Airport>({
+            id: "airports",
+            data: airports,
+            pickable: true,
+            getPosition: (a) => [a.longitude, a.latitude],
+            getRadius: (a) => (a.type === "large_airport" ? 6 : 4.5),
+            radiusUnits: "pixels",
+            // A ring alone is a 1.5px-wide click target, which is effectively
+            // unclickable. The near-transparent fill keeps the marker reading as an
+            // outline while making the whole disc pickable.
+            radiusMinPixels: 5,
+            stroked: true,
+            filled: true,
+            getFillColor: [...COLOR_AIRPORT, 30],
+            getLineWidth: 1.5,
+            lineWidthUnits: "pixels",
+            getLineColor: [...COLOR_AIRPORT, 190],
+            onClick: (info) => {
+              const airport = info.object as Airport | null;
+              if (airport) setPeeked(airport);
+            },
+          }),
+        );
+
+        if (zoom >= LABEL_MIN_ZOOM) {
+          layers.push(
+            new TextLayer<Airport>({
+              id: "airport-labels",
+              data: airports.filter((a) => a.type === "large_airport" || zoom >= 8.5),
+              getPosition: (a) => [a.longitude, a.latitude],
+              getText: (a) => a.iata ?? a.icao,
+              getSize: 10,
+              sizeUnits: "pixels",
+              getColor: [...COLOR_AIRPORT, 210],
+              getPixelOffset: [0, 11],
+              getTextAnchor: "middle",
+              getAlignmentBaseline: "top",
+              fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+              fontWeight: 500,
+              characterSet: "auto",
+              outlineWidth: 2,
+              outlineColor: [7, 9, 13, 220],
+              fontSettings: { sdf: true },
+            }),
+          );
+        }
+      }
+
+      layers.push(iconLayer);
 
       // Callsign labels appear only once the view is close enough to read them and
       // sparse enough that they will not collide into noise (§10.4). Altitude joins
@@ -334,17 +475,19 @@ export function MapViewport() {
             target: [point.longitude, point.latitude] as [number, number],
             age: i / trail.length,
           }));
-          layers.unshift(
-            new LineLayer({
-              id: "trail",
-              data: segments,
-              getSourcePosition: (d) => d.source,
-              getTargetPosition: (d) => d.target,
-              getColor: (d) => [...COLOR_SELECTED, Math.round(40 + 180 * d.age)],
-              getWidth: 2,
-              widthUnits: "pixels",
-            }),
-          );
+          // Sits above density but below the aircraft: the trail belongs to a specific
+          // aircraft, so it must not be buried under the heatmap, nor drawn over the
+          // markers it relates to.
+          const trailLayer = new LineLayer({
+            id: "trail",
+            data: segments,
+            getSourcePosition: (d) => d.source,
+            getTargetPosition: (d) => d.target,
+            getColor: (d) => [...COLOR_SELECTED, Math.round(40 + 180 * d.age)],
+            getWidth: 2,
+            widthUnits: "pixels",
+          });
+          layers.splice(layers.indexOf(iconLayer), 0, trailLayer);
         }
       }
 
@@ -435,7 +578,30 @@ export function MapViewport() {
         >
           {is3D ? "3D" : "2D"}
         </button>
+        <button
+          type="button"
+          onClick={() => setDensityOn((v) => !v)}
+          aria-pressed={densityOn}
+          title="Observed traffic density — derived, not official air-traffic density"
+          className={`rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] shadow-[var(--shadow-panel)] transition-colors ${
+            densityOn
+              ? "text-[var(--color-accent)]"
+              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+          }`}
+        >
+          Density
+        </button>
       </div>
+
+      {peeked && !selected ? (
+        <div className="absolute bottom-3 left-3 z-[var(--z-panels)]">
+          <AirportPeek
+            airport={peeked}
+            onClose={() => setPeeked(null)}
+            onFocus={(lon, lat) => flyTo(lon, lat)}
+          />
+        </div>
+      ) : null}
 
       {selected && (
         <div className="absolute bottom-3 right-3 z-[var(--z-panels)] w-[320px] max-w-[calc(100vw-1.5rem)]">

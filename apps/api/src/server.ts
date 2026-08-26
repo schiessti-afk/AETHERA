@@ -3,15 +3,18 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { config } from "./config";
 import { createRedis } from "./modules/redis";
+import { createSnapshotCache } from "./modules/snapshot";
 import { healthRoutes } from "./routes/health";
 import { aircraftRoutes } from "./routes/aircraft";
 import { airportRoutes } from "./routes/airports";
 import { searchRoutes } from "./routes/search";
 import { anomalyRoutes } from "./routes/anomalies";
+import { analyticsRoutes } from "./routes/analytics";
 import { websocketRoutes } from "./websocket/gateway";
 
 async function main() {
   const redis = await createRedis();
+  createSnapshotCache(redis);
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: config.corsOrigin });
@@ -19,9 +22,10 @@ async function main() {
 
   await app.register(healthRoutes, { redis });
   await app.register(aircraftRoutes, { redis });
-  await app.register(airportRoutes);
+  await app.register(airportRoutes, { redis });
   await app.register(searchRoutes, { redis });
   await app.register(anomalyRoutes, { redis });
+  await app.register(analyticsRoutes, { redis });
   await app.register(websocketRoutes, { redis });
 
   try {

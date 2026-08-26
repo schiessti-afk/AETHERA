@@ -1,20 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { AircraftMetadata, FlightState, SystemStats } from "@aethera/types";
 import { aircraftQuerySchema, inBoundingBox } from "@aethera/validation";
+import { summariseAirspace } from "@aethera/flight-engine";
 import { KEYS, type RedisClient } from "../modules/redis";
+import { liveAircraft } from "../modules/snapshot";
 import { pool } from "../modules/postgres";
 
-function parseStates(raw: Record<string, string>): FlightState[] {
-  const states: FlightState[] = [];
-  for (const value of Object.values(raw)) {
-    try {
-      states.push(JSON.parse(value) as FlightState);
-    } catch {
-      // skip malformed entries
-    }
-  }
-  return states;
-}
 
 export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (
   app,
@@ -22,8 +13,7 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
 ) => {
   app.get("/api/aircraft", async (request) => {
     const query = aircraftQuerySchema.parse(request.query);
-    const raw = await opts.redis.hGetAll(KEYS.state);
-    let aircraft = parseStates(raw);
+    let aircraft = await liveAircraft();
 
     if (
       query.west != null &&
@@ -126,13 +116,15 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
   );
 
   app.get("/api/stats", async () => {
-    const raw = await opts.redis.hGetAll(KEYS.state);
-    const aircraft = parseStates(raw);
+    const aircraft = await liveAircraft();
     const meta = await opts.redis.hGetAll(KEYS.meta);
+    const summary = summariseAirspace(aircraft);
     const stats: SystemStats = {
       observed: aircraft.length,
-      airborne: aircraft.filter((flight) => !flight.onGround).length,
-      onGround: aircraft.filter((flight) => flight.onGround).length,
+      airborne: summary.airborne,
+      onGround: summary.onGround,
+      climbing: summary.climbing,
+      descending: summary.descending,
       lastUpdate: meta.lastSuccessAt ?? null,
       sourceTime: meta.sourceTime ?? null,
       creditsRemaining: meta.creditsRemaining != null ? Number(meta.creditsRemaining) : null,

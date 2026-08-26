@@ -36,6 +36,8 @@ export function AppShell({
   observed = 0,
   airborne = 0,
   alerts = 0,
+  climbing = 0,
+  descending = 0,
   nextPollEtaMs = null,
 }: {
   children: ReactNode;
@@ -43,6 +45,8 @@ export function AppShell({
   observed?: number;
   airborne?: number;
   alerts?: number;
+  climbing?: number;
+  descending?: number;
   nextPollEtaMs?: number | null;
 }) {
   const pathname = usePathname();
@@ -115,6 +119,18 @@ export function AppShell({
             {airborne.toLocaleString()}
           </strong>
           Airborne
+        </span>
+        <span className="hidden lg:inline">
+          <strong className="mr-2 tabular-nums text-[var(--color-text)]">
+            {climbing.toLocaleString()}
+          </strong>
+          Climbing
+        </span>
+        <span className="hidden lg:inline">
+          <strong className="mr-2 tabular-nums text-[var(--color-text)]">
+            {descending.toLocaleString()}
+          </strong>
+          Descending
         </span>
         {alerts > 0 ? (
           <Link href="/alerts" className="text-[var(--color-alert)] hover:underline">
