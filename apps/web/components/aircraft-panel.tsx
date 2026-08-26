@@ -1,0 +1,151 @@
+"use client";
+
+import { X, Locate, Route, Crosshair } from "lucide-react";
+import { Panel } from "@aethera/ui";
+import { dataAgeSeconds } from "@aethera/flight-engine";
+import { flightStore } from "@/lib/flight-store";
+import { useFlightStore } from "@/hooks/use-flight-store";
+import {
+  formatAltitude,
+  formatHeading,
+  formatOrDash,
+  formatRelativeTime,
+  formatSpeed,
+  formatVerticalRate,
+  UNAVAILABLE,
+} from "@/lib/format";
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">
+        {label}
+      </div>
+      <div className="tabular-nums text-[15px] text-[var(--color-text)]">{value}</div>
+    </div>
+  );
+}
+
+export function AircraftPanel({
+  icao24,
+  isFollowed,
+  onClose,
+  onFollow,
+  onRecenter,
+}: {
+  icao24: string;
+  isFollowed: boolean;
+  onClose: () => void;
+  onFollow: () => void;
+  onRecenter: (longitude: number, latitude: number) => void;
+}) {
+  const { aircraft, trailVisible } = useFlightStore();
+  const flight = aircraft.get(icao24);
+
+  if (!flight) {
+    return (
+      <Panel title="Aircraft" className="text-sm">
+        <p className="text-[var(--color-text-muted)]">
+          No longer observed. It may reappear, or has left coverage.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-3 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          Close
+        </button>
+      </Panel>
+    );
+  }
+
+  const ageS = dataAgeSeconds(flight.lastSeen);
+  const status = flight.onGround ? "ON GROUND" : ageS > 180 ? "STALE" : "AIRBORNE";
+
+  return (
+    <Panel
+      title={formatOrDash(flight.callsign)}
+      action={
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <X size={16} />
+        </button>
+      }
+      className="text-sm"
+    >
+      <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+        <span>{status}</span>
+        {!flight.onGround && ageS > 2 && ageS <= 180 ? (
+          <span
+            className="text-[var(--color-text-subtle)]"
+            title="Position is dead-reckoned from the last observation, not a new report"
+          >
+            · position estimated
+          </span>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Altitude" value={formatAltitude(flight.altitude)} />
+        <Field label="Speed" value={formatSpeed(flight.velocity)} />
+        <Field label="Heading" value={formatHeading(flight.heading)} />
+        <Field label="Vertical rate" value={formatVerticalRate(flight.verticalRate)} />
+      </div>
+
+      <div className="my-3 border-t border-[var(--color-border)]" />
+
+      <div className="grid grid-cols-2 gap-3 text-[13px]">
+        <Field label="ICAO24" value={flight.icao24.toUpperCase()} />
+        <Field label="Squawk" value={formatOrDash(flight.squawk)} />
+        <Field label="Last contact" value={formatRelativeTime(flight.lastSeen)} />
+        <Field
+          label="Position"
+          value={
+            flight.latitude != null && flight.longitude != null
+              ? `${flight.latitude.toFixed(2)}, ${flight.longitude.toFixed(2)}`
+              : UNAVAILABLE
+          }
+        />
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={onFollow}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] py-1.5 text-[11px] uppercase tracking-[0.14em] transition-colors ${
+            isFollowed
+              ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+          }`}
+        >
+          <Locate size={13} strokeWidth={1.6} />
+          {isFollowed ? "Exit follow" : "Follow"}
+        </button>
+        <button
+          type="button"
+          onClick={() => flightStore.toggleTrail()}
+          className={`flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] transition-colors ${
+            trailVisible
+              ? "text-[var(--color-accent)]"
+              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+          }`}
+          aria-pressed={trailVisible}
+        >
+          <Route size={13} strokeWidth={1.6} />
+          Trail
+        </button>
+        <button
+          type="button"
+          onClick={() => onRecenter(flight.longitude, flight.latitude)}
+          className="flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <Crosshair size={13} strokeWidth={1.6} />
+        </button>
+      </div>
+    </Panel>
+  );
+}

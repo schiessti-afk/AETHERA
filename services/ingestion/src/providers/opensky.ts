@@ -6,7 +6,7 @@ import type { FlightDataProvider, ProviderSnapshot } from "./types";
 
 const OPENSKY_URL = "https://opensky-network.org/api/states/all";
 
-type OpenSkyVector = [
+export type OpenSkyVector = [
   string,
   string | null,
   string | null,
@@ -97,7 +97,7 @@ export class OpenSkyProvider implements FlightDataProvider {
   }
 }
 
-function normalizeVector(vector: OpenSkyVector, receivedAt: string): FlightState | null {
+export function normalizeVector(vector: OpenSkyVector, receivedAt: string): FlightState | null {
   const icao24 = vector[0]?.trim();
   const longitude = vector[5];
   const latitude = vector[6];

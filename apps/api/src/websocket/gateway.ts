@@ -15,22 +15,35 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
   await subscriber.connect();
   const sockets = new Set<{ send: (payload: string) => void; state: SocketState }>();
 
-  await subscriber.subscribe(KEYS.events, async () => {
+  async function currentAircraft(): Promise<FlightState[]> {
     const raw = await opts.redis.hGetAll(KEYS.state);
-    const aircraft = Object.values(raw).map((value) => JSON.parse(value) as FlightState);
+    return Object.values(raw).map((value) => JSON.parse(value) as FlightState);
+  }
+
+  function visibleFor(aircraft: FlightState[], bounds: BoundingBox | null): FlightState[] {
+    return bounds
+      ? aircraft.filter((flight) => inBoundingBox(flight.latitude, flight.longitude, bounds))
+      : aircraft;
+  }
+
+  function sendSnapshot(
+    socket: { send: (payload: string) => void; state: SocketState },
+    aircraft: FlightState[],
+  ): void {
+    const visible = visibleFor(aircraft, socket.state.bounds);
+    socket.send(
+      JSON.stringify({
+        type: "flight.updated",
+        timestamp: new Date().toISOString(),
+        data: { aircraft: visible, count: visible.length },
+      }),
+    );
+  }
+
+  await subscriber.subscribe(KEYS.events, async () => {
+    const aircraft = await currentAircraft();
     for (const socket of sockets) {
-      const visible = socket.state.bounds
-        ? aircraft.filter((flight) =>
-            inBoundingBox(flight.latitude, flight.longitude, socket.state.bounds!),
-          )
-        : aircraft;
-      socket.send(
-        JSON.stringify({
-          type: "flight.updated",
-          timestamp: new Date().toISOString(),
-          data: { aircraft: visible, count: visible.length },
-        }),
-      );
+      sendSnapshot(socket, aircraft);
     }
   });
 
@@ -45,11 +58,15 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
     };
     sockets.add(client);
 
+    // Don't leave a new connection staring at an empty map for up to a full poll cycle.
+    void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
+
     socket.on("message", (raw: Buffer | string) => {
       try {
         const parsed = viewportSubscribeSchema.safeParse(JSON.parse(String(raw)));
         if (parsed.success) {
           client.state.bounds = parsed.data.bounds;
+          void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
         }
       } catch {
         // ignore malformed client messages

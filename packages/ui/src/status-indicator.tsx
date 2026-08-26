@@ -5,6 +5,7 @@ const labels: Record<ConnectionStatus, string> = {
   CONNECTING: "CONNECTING",
   DELAYED: "DELAYED",
   DEGRADED: "DEGRADED",
+  STALE: "STALE",
   OFFLINE: "OFFLINE",
 };
 
@@ -13,6 +14,7 @@ const marks: Record<ConnectionStatus, string> = {
   CONNECTING: "◌",
   DELAYED: "△",
   DEGRADED: "△",
+  STALE: "△",
   OFFLINE: "○",
 };
 
@@ -20,7 +22,8 @@ const colors: Record<ConnectionStatus, string> = {
   LIVE: "text-[var(--color-accent)]",
   CONNECTING: "text-[var(--color-text-muted)]",
   DELAYED: "text-[var(--color-warning)]",
-  DEGRADED: "text-[var(--color-warning)]",
+  DEGRADED: "text-[var(--color-alert)]",
+  STALE: "text-[var(--color-alert)]",
   OFFLINE: "text-[var(--color-text-subtle)]",
 };
 

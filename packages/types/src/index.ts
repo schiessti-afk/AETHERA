@@ -5,6 +5,7 @@ export type ConnectionStatus =
   | "CONNECTING"
   | "DELAYED"
   | "DEGRADED"
+  | "STALE"
   | "OFFLINE";
 
 export interface BoundingBox {
@@ -115,6 +116,11 @@ export interface SystemStats {
   airborne: number;
   onGround: number;
   lastUpdate: string | null;
+  sourceTime: string | null;
+  creditsRemaining: number | null;
+  pollIntervalMs: number | null;
+  staleAfterMs: number | null;
+  lastError: string | null;
 }
 
 export interface FlightDataProvider {

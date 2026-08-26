@@ -3,14 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-maplibre-worker.mjs",
     "dev": "next dev --port 3000",
+    "prebuild": "node scripts/sync-maplibre-worker.mjs",
     "build": "next build",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aethera/flight-engine": "workspace:*",
     "@aethera/types": "workspace:*",
     "@aethera/ui": "workspace:*",
+    "@aethera/validation": "workspace:*",
+    "@deck.gl/core": "^9.3.10",
+    "@deck.gl/layers": "^9.3.10",
+    "@deck.gl/mapbox": "^9.3.10",
     "lucide-react": "^0.469.0",
     "maplibre-gl": "^6.6.0",
     "next": "^15.1.4",

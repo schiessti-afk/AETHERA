@@ -22,18 +22,29 @@ const nav = [
   { href: "/history", label: "History", icon: Clock3 },
 ];
 
+function formatEta(ms: number | null): string | null {
+  if (ms == null) return null;
+  const seconds = Math.round(ms / 1000);
+  if (seconds <= 0) return "next update any moment";
+  if (seconds < 60) return `next update in ${seconds}s`;
+  return `next update in ${Math.round(seconds / 60)}m`;
+}
+
 export function AppShell({
   children,
   status = "CONNECTING",
   observed = 0,
   airborne = 0,
+  nextPollEtaMs = null,
 }: {
   children: ReactNode;
   status?: ConnectionStatus;
   observed?: number;
   airborne?: number;
+  nextPollEtaMs?: number | null;
 }) {
   const pathname = usePathname();
+  const etaLabel = status === "LIVE" || status === "DELAYED" ? formatEta(nextPollEtaMs) : null;
 
   return (
     <div className="flex h-dvh flex-col bg-[var(--color-background)] text-[var(--color-text)]">
@@ -49,7 +60,8 @@ export function AppShell({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            className="hidden items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-muted)] md:flex"
+            onClick={() => window.dispatchEvent(new CustomEvent("aethera:open-search"))}
+            className="hidden items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)] md:flex"
             aria-label="Search aircraft or airport"
           >
             <Search size={14} />
@@ -102,6 +114,11 @@ export function AppShell({
           </strong>
           Airborne
         </span>
+        {etaLabel ? (
+          <span className="hidden text-[var(--color-text-subtle)] normal-case tracking-normal sm:inline">
+            {etaLabel}
+          </span>
+        ) : null}
         <nav className="ml-auto flex gap-3 md:hidden" aria-label="Mobile">
           {nav.map((item) => (
             <Link

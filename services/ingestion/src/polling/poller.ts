@@ -43,7 +43,7 @@ export class Poller {
     try {
       const snapshot = await this.provider.fetchSnapshot(this.bounds);
       const states = validateStates(snapshot.states);
-      await this.publisher.replaceSnapshot(states, snapshot.sourceTime, snapshot.creditsRemaining);
+      await this.publisher.mergeSnapshot(states, snapshot.sourceTime, snapshot.creditsRemaining);
       const remaining =
         snapshot.creditsRemaining != null ? ` credits=${snapshot.creditsRemaining}` : "";
       console.log(`ingestion: stored ${states.length} observed aircraft${remaining}`);

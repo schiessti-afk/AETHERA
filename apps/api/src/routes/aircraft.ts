@@ -84,6 +84,11 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
       airborne: aircraft.filter((flight) => !flight.onGround).length,
       onGround: aircraft.filter((flight) => flight.onGround).length,
       lastUpdate: meta.lastSuccessAt ?? null,
+      sourceTime: meta.sourceTime ?? null,
+      creditsRemaining: meta.creditsRemaining != null ? Number(meta.creditsRemaining) : null,
+      pollIntervalMs: meta.pollIntervalMs != null ? Number(meta.pollIntervalMs) : null,
+      staleAfterMs: meta.staleAfterMs != null ? Number(meta.staleAfterMs) : null,
+      lastError: meta.lastError ? meta.lastError : null,
     };
     return stats;
   });

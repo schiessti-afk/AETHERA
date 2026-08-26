@@ -3,7 +3,16 @@ import { flightStateSchema, inBoundingBox } from "@aethera/validation";
 import type { BoundingBox } from "@aethera/types";
 
 const EARTH_RADIUS_M = 6_371_000;
-const MAX_EXTRAPOLATION_S = 30;
+/**
+ * How long dead-reckoning is trusted before a position stops advancing.
+ * Matches the ~90-120s OpenSky poll cadence so motion stays continuous
+ * between snapshots instead of freezing well before the next one arrives.
+ */
+const DEFAULT_MAX_EXTRAPOLATION_S = 120;
+/** Past this age, a marker should read as stale rather than confidently live. */
+export const STALE_AFTER_S = 180;
+/** Past this age, an aircraft should be removed from the scene entirely. */
+export const REMOVE_AFTER_S = 300;
 
 export class FlightStore {
   private flights = new Map<string, FlightState>();
@@ -52,6 +61,7 @@ export function parseFlightState(input: unknown): FlightState | null {
 export function interpolatePosition(
   state: FlightState,
   now = Date.now(),
+  maxExtrapolationS = DEFAULT_MAX_EXTRAPOLATION_S,
 ): { latitude: number; longitude: number; interpolated: boolean } {
   if (state.onGround || state.velocity == null || state.heading == null) {
     return { latitude: state.latitude, longitude: state.longitude, interpolated: false };
@@ -62,7 +72,7 @@ export function interpolatePosition(
     return { latitude: state.latitude, longitude: state.longitude, interpolated: false };
   }
 
-  const dt = Math.min(elapsedS, MAX_EXTRAPOLATION_S);
+  const dt = Math.min(elapsedS, maxExtrapolationS);
   const distanceM = state.velocity * dt;
   const headingRad = (state.heading * Math.PI) / 180;
   const latRad = (state.latitude * Math.PI) / 180;
@@ -80,4 +90,22 @@ export function interpolatePosition(
 
 export function dataAgeSeconds(lastSeen: string, now = Date.now()): number {
   return Math.max(0, (now - Date.parse(lastSeen)) / 1000);
+}
+
+export type MarkerFreshness = "live" | "aging" | "stale";
+
+/** Live until STALE_AFTER_S, then stale until REMOVE_AFTER_S, then gone. */
+export function markerFreshness(ageSeconds: number): MarkerFreshness {
+  if (ageSeconds <= STALE_AFTER_S) return "live";
+  return "stale";
+}
+
+/**
+ * 1 at a fresh observation, fading to 0 by STALE_AFTER_S. Drives marker
+ * opacity so extrapolated confidence decays visibly instead of a hard freeze.
+ */
+export function positionConfidence(ageSeconds: number): number {
+  if (ageSeconds <= 0) return 1;
+  if (ageSeconds >= STALE_AFTER_S) return 0.35;
+  return 1 - 0.65 * (ageSeconds / STALE_AFTER_S);
 }

@@ -8,6 +8,10 @@ dist/
 out/
 *.tsbuildinfo
 
+# Generated: synced from maplibre-gl by scripts/sync-maplibre-worker.mjs (predev/prebuild)
+apps/web/public/maplibre-gl-worker.js
+apps/web/public/maplibre-gl-shared.mjs
+
 # Environment
 .env
 .env.local

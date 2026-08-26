@@ -3,6 +3,7 @@ import { config } from "./config";
 import { OpenSkyProvider } from "./providers/opensky";
 import { RedisPublisher } from "./publisher/redis";
 import { Poller } from "./polling/poller";
+import { KEYS } from "./publisher/redis";
 
 async function main() {
   const redis = createClient({ url: config.redisUrl });
@@ -11,8 +12,11 @@ async function main() {
   });
   await redis.connect();
 
+  await redis.hSet(KEYS.meta, "pollIntervalMs", String(config.pollIntervalMs));
+  await redis.hSet(KEYS.meta, "staleAfterMs", String(config.staleAfterMs));
+
   const provider = new OpenSkyProvider(config.openskyClientId, config.openskyClientSecret);
-  const publisher = new RedisPublisher(redis);
+  const publisher = new RedisPublisher(redis, config.staleAfterMs);
   const poller = new Poller(provider, publisher, config.pollIntervalMs, config.bounds);
 
   poller.start();
