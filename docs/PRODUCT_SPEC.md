@@ -1023,6 +1023,22 @@ Airline, aircraft type, registration, route, and airport metadata may come from 
 
 Enrichment is metadata, not telemetry. If enrichment is missing, telemetry still works.
 
+### 24.5 OpenSky credit budget
+
+AETHERA's OpenSky account is **Standard: 4,000 `/states` credits per day**. That quota is for the whole product, not per visitor.
+
+What it means in practice:
+
+- A **global** live snapshot costs **4 credits**.
+- The instance can take about **1,000 global snapshots per day**, so ingestion polls about every **90 seconds**, not every few seconds.
+- A **small region** (≤ 25 square degrees) costs **1 credit** and can be refreshed about every **22 seconds**.
+- `/tracks` and `/flights` have **separate** 4,000-credit buckets. Phase 1 does not spend them.
+- When credits run out, OpenSky returns `429` until the daily refill. The map should keep the last observed state and show delayed/degraded status.
+
+The product still feels live because aircraft **interpolate** between snapshots. The UI must not imply a continuous radar picture or second-by-second official surveillance.
+
+Do not add features that multiply OpenSky calls (per-user polling, aggressive historical REST, unbounded track fetch) while this tier remains the source of truth.
+
 ---
 
 ## 25. Observed vs Derived Data
@@ -1336,7 +1352,7 @@ The MVP exists to prove the core experience:
 - Search for callsign, ICAO24, and airports
 - Basic filters (altitude, airborne/ground, alert)
 - 2D / 3D toggle with graceful fallback
-- Live / delayed / stale / offline status
+- Live / delayed / stale / offline status (cadence matches the ~90 s OpenSky poll, not a 5 s tick)
 - Observed counts
 - Emergency squawk detections (7500 / 7600 / 7700)
 - At least one additional kinematic detection (rapid descent or lost signal)

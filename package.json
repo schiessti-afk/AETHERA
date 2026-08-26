@@ -1,0 +1,26 @@
+{
+  "name": "aethera",
+  "version": "0.1.0",
+  "description": "Live Airspace Intelligence",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @aethera/web --filter @aethera/api --filter @aethera/ingestion dev",
+    "dev:web": "pnpm --filter @aethera/web dev",
+    "dev:api": "pnpm --filter @aethera/api dev",
+    "dev:ingestion": "pnpm --filter @aethera/ingestion dev",
+    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
+    "build": "pnpm -r build",
+    "start": "pnpm -r start",
+    "typecheck": "pnpm -r typecheck",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

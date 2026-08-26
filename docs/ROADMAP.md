@@ -31,6 +31,7 @@ AETHERA starts as a single-server, Docker-first system. Scale, additional provid
 
 - The map and the aircraft are the product. Every phase must leave the visualization better, not busier.
 - The browser never talks to OpenSky. Ingestion, Redis, and the API stay in front of every data source.
+- OpenSky Standard access is **4,000 `/states` credits per day** for the whole instance. Global snapshots cost 4 credits; default poll is ~90 s. Do not add per-user or high-frequency OpenSky calls.
 - Observed data, derived data, interpolated motion, and detected anomalies remain visually and verbally distinct.
 - AI/ML is not required to ship intelligence. Early detection is deterministic.
 - Kafka, Kubernetes, and a microservice explosion are out of scope until a later phase proves they are needed.
@@ -72,7 +73,7 @@ This phase proves the architecture and ships **Explore**. A user should open AET
 ### Goals
 
 - Stand up the backend-first pipeline: OpenSky → ingestion → Redis → API / realtime → web.
-- Render observed aircraft smoothly on a premium Mapbox + Deck.gl map.
+- Render observed aircraft smoothly on a premium MapLibre + Deck.gl map.
 - Make telemetry, search, and filtering useful without covering the map.
 - Establish the visual language: dark, precise, restrained, map-first.
 
@@ -82,13 +83,14 @@ This phase proves the architecture and ships **Explore**. A user should open AET
 
 - Monorepo, pnpm, TypeScript, Docker Compose
 - `ingestion`, `api`, `web`, PostgreSQL, Redis
-- Environment configuration for OpenSky, Mapbox, and database credentials
+- Environment configuration for OpenSky and database credentials
 - Shared types and validation packages
 - Health checks and graceful degradation when OpenSky is unavailable
 
 **Data**
 
-- OpenSky polling and state-vector normalization
+- OpenSky polling and state-vector normalization within the Standard **4,000 `/states` credits/day** budget (default ~90 s global poll; optional regional bbox)
+- Credit-aware backoff on HTTP 429 and remaining-credit visibility
 - Deduplication and validation
 - Redis as the live aircraft store
 - WebSocket flight updates
@@ -165,7 +167,7 @@ This phase ships **Alerts** and deepens Explore. Unusual states become first-cla
 
 **Explore depth**
 
-- Flight trails for selected and recently observed aircraft
+- Flight trails for selected and recently observed aircraft, built from **AETHERA-stored positions**, not OpenSky `/tracks` (that bucket is reserved for History)
 - Stronger aircraft intelligence panel: identity, telemetry, recent events
 - Follow mode that tracks a selected aircraft in 2D and 3D
 - Additional filters: squawk, vertical rate, aircraft type when metadata exists
@@ -267,6 +269,7 @@ This phase ships **History** and matures AETHERA from a live viewer into a durab
 **History**
 
 - Durable flight records, selected track points, and anomaly history in PostgreSQL
+- Prefer history captured from the live poll; OpenSky `/flights` and `/tracks` have a **separate** 4,000 credits/day each and must be budgeted like `/states`
 - History surface: pick a time range and region, then replay
 - Playback controls: play, pause, speed, scrub
 - Continuity with Explore: same map language, same aircraft panel, same honesty about interpolation

@@ -18,7 +18,7 @@ The architecture must prioritize:
 - Real-time flight updates
 - Smooth map rendering
 - Scalable WebSocket connections
-- Efficient OpenSky API usage
+- Efficient OpenSky API usage within the Standard **4,000 `/states` credits per day** budget
 - Clear separation between ingestion, processing, and presentation
 - Redis for ephemeral real-time state
 - PostgreSQL for persistent data
@@ -76,7 +76,7 @@ The system should be capable of starting as a single-server application while pr
           │   PostgreSQL     │       │    Web Clients   │
           │                  │       │                  │
           │ Flights          │       │ React            │
-          │ Aircraft         │       │ Mapbox / Deck.gl │
+          │ Aircraft         │       │ MapLibre+Deck.gl │
           │ Events           │       │ Three.js         │
           │ Anomalies        │       │ WebSocket        │
           └──────────────────┘       └──────────────────┘
@@ -131,7 +131,7 @@ This protects the external API, allows caching, enables anomaly processing, and 
 - Next.js
 - React
 - TypeScript
-- Mapbox GL JS
+- MapLibre GL JS
 - Deck.gl
 - Tailwind CSS
 - WebSocket
@@ -335,16 +335,16 @@ It should not contain the core flight-processing logic.
 The map is the centerpiece of AETHERA.
 
 ```text
-Mapbox
+MapLibre
    +
 Deck.gl
    +
 React
 ```
 
-**Mapbox** handles:
+**MapLibre** handles:
 
-- Base map
+- Base map (OpenFreeMap / OSM vector tiles, no API key)
 - Geographic projection
 - Navigation
 - Terrain
@@ -588,6 +588,8 @@ PostgreSQL      Browser
 The ingestion service is intentionally isolated from the API server.
 
 This prevents API traffic from interfering with data collection.
+
+OpenSky is polled on a **credit budget**, not as fast as the map can render. Default: one global snapshot about every **90 seconds**. See §25.
 
 ---
 
@@ -916,7 +918,6 @@ The backend must protect:
 - OpenSky credentials
 - Database credentials
 - Redis credentials
-- Mapbox tokens
 - Application secrets
 
 Secrets must never be committed.
@@ -954,7 +955,49 @@ OpenSky access is centralized.
 
 Users never directly consume OpenSky requests.
 
-This is one of the most important architectural decisions in AETHERA.
+This is one of the most important architectural decisions in AETHERA. The credit budget belongs to the **AETHERA instance**, not to each browser.
+
+### 25.1 OpenSky credit model
+
+AETHERA currently uses a **Standard** OpenSky account: **4,000 credits per day** for `/states/*`. Credits refill daily. `/tracks/*` and `/flights/*` have separate 4,000-credit buckets and are unused in Phase 1.
+
+Anonymous access is 400/day. An active ADS-B feeder (≥30% monthly uptime) is 8,000/day. Licensed access is 14,400 **per hour**. `/states/own` (own receivers) costs nothing.
+
+`GET /states/all` cost depends on bounding-box area (latitude span × longitude span, in square degrees):
+
+| Bounding box | Credits per poll | Polls / 4,000 credits | Fastest 24h interval |
+| --- | ---: | ---: | ---: |
+| ≤ 25 sq° | 1 | 4,000 | ~22 s |
+| 25–100 sq° | 2 | 2,000 | ~44 s |
+| 100–400 sq° | 3 | 1,333 | ~65 s |
+| > 400 sq° or **global** | 4 | **1,000** | **~87 s** |
+
+A 10-second global poll would cost `8,640 × 4 = 34,560` credits/day and exhaust Standard quota in a few hours. That interval is not allowed.
+
+Authenticated state vectors have **5-second source resolution** and up to **one hour** of lookback. Polling faster than the credit interval does not make OpenSky emit denser data; the map stays smooth through **client interpolation**.
+
+### 25.2 AETHERA polling policy
+
+Default operating mode:
+
+- One ingestion poller for the whole product
+- Global `/states/all` unless `OPENSKY_WEST/SOUTH/EAST/NORTH` is set
+- Interval = `max(configured, floor that keeps 95% of the daily budget)`
+- Default configured interval: **90 seconds** (about 960 global polls × 4 credits ≈ 3,840/day, with headroom for retries and manual tests)
+- On `429`, honor `X-Rate-Limit-Retry-After-Seconds` and pause
+- Persist `X-Rate-Limit-Remaining` in Redis so health/status can show budget
+- Aircraft motion between snapshots is interpolated from last observed velocity and heading
+
+Do **not**:
+
+- Let the browser call OpenSky
+- Start one poller per connected user
+- Poll `/states/all` globally every few seconds
+- Spend Phase 1 `/flights` or `/tracks` credits on history until History exists
+
+To poll a region more often, shrink the box. Example: a 5° × 5° area is 25 sq° → 1 credit → ~22 s. Europe-scale boxes are often still > 400 sq° and cost the same as global.
+
+When remaining credits cannot cover the rest of the UTC day at the current cost, ingestion must slow down or pause rather than return 429 in a loop. The UI then shows `DELAYED` / `DEGRADED` from data age, not a fake live feed.
 
 ---
 
@@ -985,12 +1028,12 @@ UI shows "Data delayed"
 
 The frontend should clearly communicate:
 
-- `LIVE`
+- `LIVE` — a snapshot arrived within about two poll intervals (~150 s at the default 90 s cadence)
 - `DELAYED`
 - `DEGRADED`
 - `OFFLINE`
 
-rather than pretending data is live.
+rather than pretending data is live. Freshness thresholds must follow the OpenSky credit-limited poll interval, not a 5–10 second dashboard assumption.
 
 ---
 
@@ -1216,6 +1259,8 @@ and display:
 
 This is important because real-time data is only useful if the user knows how fresh it is.
 
+OpenSky Standard credits mean snapshots may be ~90 seconds apart for a global feed. Interpolation keeps markers moving; labels must still distinguish **observed** from **interpolated**, and `LIVE` means “ingestion is on cadence,” not “OpenSky was queried this second.”
+
 ---
 
 ## 34. Frontend State Architecture
@@ -1263,10 +1308,10 @@ Flight Visualization Adapter
 Deck.gl
        │
        ▼
-Mapbox
+MapLibre
 ```
 
-This allows the rest of the application to work without depending on Mapbox.
+This allows the rest of the application to work without depending on MapLibre.
 
 Potential future visualization engines:
 
@@ -1488,7 +1533,7 @@ The first implementation should remain intentionally simple:
                             │
                             ▼
                            Web
-                       Mapbox + Deck.gl
+                       MapLibre + Deck.gl
 ```
 
 ### MVP services
@@ -1523,7 +1568,7 @@ Build the core experience first.
 - API
 - WebSocket
 - Next.js
-- Mapbox
+- MapLibre
 - Deck.gl
 - Docker
 
@@ -1601,7 +1646,7 @@ The intended long-term architecture is:
                               │
               ┌───────────────┼───────────────┐
               ▼               ▼               ▼
-           Mapbox          Deck.gl        UI System
+           MapLibre          Deck.gl        UI System
               │               │               │
               └───────────────┼───────────────┘
                               ▼
