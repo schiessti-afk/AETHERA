@@ -20,6 +20,9 @@ import {
 const RETENTION_DAYS = Number(process.env.HISTORY_RETENTION_DAYS ?? 30);
 
 const HOUR_COLUMNS = `icao24, hour_start, point_count, t_off, lats, lons, alts`;
+const HEAVY_QUERY_LIMIT = {
+  config: { rateLimit: { max: 30, timeWindow: "1 minute" as const } },
+};
 
 export const historyRoutes: FastifyPluginAsync = async (app) => {
   /**
@@ -90,7 +93,7 @@ export const historyRoutes: FastifyPluginAsync = async (app) => {
    * Region + time window. Packed rows stay packed in SQL; expansion happens here.
    * Paged by (hour_start, icao24) so a busy Europe hour does not become one payload.
    */
-  app.get("/api/history/region", async (request, reply) => {
+  app.get("/api/history/region", HEAVY_QUERY_LIMIT, async (request, reply) => {
     const query = historyRegionQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({ error: "Invalid history query" });
 
@@ -164,7 +167,10 @@ export const historyRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.get<{ Params: { icao24: string } }>("/api/history/aircraft/:icao24", async (request, reply) => {
+  app.get<{ Params: { icao24: string } }>(
+    "/api/history/aircraft/:icao24",
+    HEAVY_QUERY_LIMIT,
+    async (request, reply) => {
     const query = historyAircraftQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({ error: "Invalid history query" });
 
@@ -222,7 +228,7 @@ export const historyRoutes: FastifyPluginAsync = async (app) => {
    * Inferred sessions covering the window. Always labelled derived — session
    * boundaries are a model, not an observation (PHASE4 D3).
    */
-  app.get("/api/history/sessions", async (request, reply) => {
+  app.get("/api/history/sessions", HEAVY_QUERY_LIMIT, async (request, reply) => {
     const query = historySessionsQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({ error: "Invalid history query" });
 

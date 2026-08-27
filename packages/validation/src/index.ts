@@ -113,3 +113,21 @@ export function inBoundingBox(
   }
   return inLat && (longitude >= west || longitude <= east);
 }
+
+/** Matches parseIdentityPattern's cap so search SQL and glob matching stay in lockstep. */
+export const SEARCH_QUERY_MAX_LENGTH = 64;
+
+/**
+ * SQL fragment so `%` and `_` in user text stay literal under ILIKE.
+ * PostgreSQL has no default LIKE escape; this sets it to backslash.
+ */
+export const ILIKE_ESCAPE_SQL = "ESCAPE E'\\\\'";
+
+export function clampSearchQuery(raw: string): string {
+  return raw.trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
+}
+
+/** Escape `\`, `%`, and `_` for use with {@link ILIKE_ESCAPE_SQL}. */
+export function escapeIlike(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}

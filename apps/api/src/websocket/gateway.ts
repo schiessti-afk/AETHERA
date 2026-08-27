@@ -1,15 +1,22 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import type { BoundingBox, FlightState } from "@aethera/types";
 import {
   aircraftWatchSchema,
   inBoundingBox,
   viewportSubscribeSchema,
 } from "@aethera/validation";
+import { config } from "../config";
+import { liveAircraft } from "../modules/snapshot";
 import { KEYS, type RedisClient } from "../modules/redis";
 
 interface SocketState {
   bounds: BoundingBox | null;
   watching: string | null;
+}
+
+interface Client {
+  send: (payload: string) => void;
+  state: SocketState;
 }
 
 /**
@@ -20,23 +27,46 @@ interface SocketState {
  */
 const WATCH_TTL_MS = 5 * 60_000;
 
+function requestOrigin(request: FastifyRequest): string | undefined {
+  const header = request.headers.origin;
+  if (Array.isArray(header)) return header[0];
+  return header;
+}
+
+function originAllowed(origin: string | undefined): boolean {
+  // Browser pages always send Origin. Non-browser clients often omit it.
+  if (!origin) return true;
+  return config.corsOrigins.includes(origin);
+}
+
 export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (
   app,
   opts,
 ) => {
   const subscriber = opts.redis.duplicate();
   await subscriber.connect();
-  const sockets = new Set<{ send: (payload: string) => void; state: SocketState }>();
+  const sockets = new Set<Client>();
+  const socketsByIp = new Map<string, number>();
 
-  async function currentAircraft(): Promise<FlightState[]> {
-    const raw = await opts.redis.hGetAll(KEYS.state);
-    return Object.values(raw).map((value) => JSON.parse(value) as FlightState);
+  function admit(ip: string): boolean {
+    if (sockets.size >= config.wsMaxConnections) return false;
+    const current = socketsByIp.get(ip) ?? 0;
+    if (current >= config.wsMaxConnectionsPerIp) return false;
+    socketsByIp.set(ip, current + 1);
+    return true;
+  }
+
+  function release(ip: string): void {
+    const current = socketsByIp.get(ip) ?? 0;
+    if (current <= 1) socketsByIp.delete(ip);
+    else socketsByIp.set(ip, current - 1);
   }
 
   function visibleFor(aircraft: FlightState[], bounds: BoundingBox | null): FlightState[] {
-    return bounds
-      ? aircraft.filter((flight) => inBoundingBox(flight.latitude, flight.longitude, bounds))
-      : aircraft;
+    if (!bounds) return [];
+    return aircraft.filter((flight) =>
+      inBoundingBox(flight.latitude, flight.longitude, bounds),
+    );
   }
 
   async function registerWatch(icao24: string | null): Promise<void> {
@@ -47,10 +77,8 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
     });
   }
 
-  function sendSnapshot(
-    socket: { send: (payload: string) => void; state: SocketState },
-    aircraft: FlightState[],
-  ): void {
+  function sendSnapshot(socket: Client, aircraft: FlightState[]): void {
+    if (!socket.state.bounds) return;
     const visible = visibleFor(aircraft, socket.state.bounds);
     socket.send(
       JSON.stringify({
@@ -87,15 +115,26 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
 
     if (type !== "flight.updated") return;
 
-    const aircraft = await currentAircraft();
+    const aircraft = await liveAircraft();
     for (const socket of sockets) {
       sendSnapshot(socket, aircraft);
     }
   });
 
-  app.get("/ws", { websocket: true }, (socket) => {
-    const client = {
-      state: { bounds: null, watching: null } as SocketState,
+  app.get("/ws", { websocket: true }, (socket, request) => {
+    if (!originAllowed(requestOrigin(request))) {
+      socket.close(1008, "origin not allowed");
+      return;
+    }
+
+    const ip = request.ip;
+    if (!admit(ip)) {
+      socket.close(1008, "too many connections");
+      return;
+    }
+
+    const client: Client = {
+      state: { bounds: null, watching: null },
       send(payload: string) {
         if (socket.readyState === socket.OPEN) {
           socket.send(payload);
@@ -103,9 +142,6 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
       },
     };
     sockets.add(client);
-
-    // Don't leave a new connection staring at an empty map for up to a full poll cycle.
-    void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
 
     socket.on("message", (raw: Buffer | string) => {
       let message: unknown;
@@ -118,7 +154,7 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
       const viewport = viewportSubscribeSchema.safeParse(message);
       if (viewport.success) {
         client.state.bounds = viewport.data.bounds;
-        void currentAircraft().then((aircraft) => sendSnapshot(client, aircraft));
+        void liveAircraft().then((aircraft) => sendSnapshot(client, aircraft));
         return;
       }
 
@@ -131,6 +167,7 @@ export const websocketRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
 
     socket.on("close", () => {
       sockets.delete(client);
+      release(ip);
     });
   });
 };

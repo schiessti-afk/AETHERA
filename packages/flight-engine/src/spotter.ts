@@ -357,6 +357,8 @@ const GA = new Set([
 ]);
 
 const MAX_PATTERN_LENGTH = 64;
+/** A glob of only stars is cheap to reject and expensive to run. */
+const MAX_WILDCARDS = 10;
 
 export type IdentityPattern =
   | { kind: "all" }
@@ -393,30 +395,19 @@ export function isRareType(typeCode: string | null | undefined): boolean {
  *
  * - empty → match everything
  * - `TAP*` / `*834A` / `N12?` → glob, anchored, case-insensitive
- * - `/^BAW\d+$/` → regex (the `i` flag is always applied)
  * - otherwise → case-insensitive substring over the supplied fields
+ *
+ * Freeform `/regex/` is not accepted. User-supplied RegExp against the live
+ * snapshot is a ReDoS vector; glob covers the spotter cases.
  */
 export function parseIdentityPattern(raw: string): IdentityPattern {
   const input = raw.trim();
   if (!input) return { kind: "all" };
   if (input.length > MAX_PATTERN_LENGTH) return { kind: "invalid" };
 
-  if (input.length >= 2 && input.startsWith("/")) {
-    const last = input.lastIndexOf("/");
-    if (last > 0) {
-      const body = input.slice(1, last);
-      const flags = input.slice(last + 1);
-      if (!body) return { kind: "invalid" };
-      if (![...flags].every((flag) => flag === "i")) return { kind: "invalid" };
-      try {
-        return { kind: "regex", regex: new RegExp(body, "i") };
-      } catch {
-        return { kind: "invalid" };
-      }
-    }
-  }
-
   if (input.includes("*") || input.includes("?")) {
+    const wildcards = (input.match(/[*?]/g) ?? []).length;
+    if (wildcards > MAX_WILDCARDS) return { kind: "invalid" };
     const escaped = input
       .replace(/[.+^${}()|[\]\\]/g, "\\$&")
       .replace(/\*/g, ".*")

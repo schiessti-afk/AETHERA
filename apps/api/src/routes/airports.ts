@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { Airport, FlightState } from "@aethera/types";
 import { boundingBoxAround, distanceKm } from "@aethera/flight-engine";
-import { inBoundingBox } from "@aethera/validation";
+import { clampSearchQuery, escapeIlike, ILIKE_ESCAPE_SQL, inBoundingBox } from "@aethera/validation";
 import { pool } from "../modules/postgres";
 import { type RedisClient } from "../modules/redis";
 import { liveAircraft } from "../modules/snapshot";
@@ -81,18 +81,22 @@ export const airportRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (
         return { airports: result.rows as Airport[] };
       }
 
-      const q = (request.query.q ?? "").trim();
+      const q = clampSearchQuery(request.query.q ?? "");
       if (q) {
+        const exact = escapeIlike(q);
+        const contains = `%${exact}%`;
+        const prefix = `${exact}%`;
         const result = await pool.query(
           `SELECT ${AIRPORT_COLUMNS} FROM airports
-            WHERE icao ILIKE $1 OR iata ILIKE $1 OR name ILIKE $2 OR city ILIKE $2
+            WHERE icao ILIKE $1 ${ILIKE_ESCAPE_SQL} OR iata ILIKE $1 ${ILIKE_ESCAPE_SQL}
+               OR name ILIKE $2 ${ILIKE_ESCAPE_SQL} OR city ILIKE $2 ${ILIKE_ESCAPE_SQL}
             ORDER BY
               -- Exact code matches first, then bigger airports: someone typing "LHR"
               -- wants Heathrow, not every field whose name contains those letters.
-              CASE WHEN icao ILIKE $1 OR iata ILIKE $1 THEN 0 ELSE 1 END,
+              CASE WHEN icao ILIKE $1 ${ILIKE_ESCAPE_SQL} OR iata ILIKE $1 ${ILIKE_ESCAPE_SQL} THEN 0 ELSE 1 END,
               -- A name match beats an incidental city match: "London" should surface the
               -- London airports before King Phalo, which sits in East London, ZA.
-              CASE WHEN name ILIKE $4 THEN 0 WHEN name ILIKE $2 THEN 1 ELSE 2 END,
+              CASE WHEN name ILIKE $4 ${ILIKE_ESCAPE_SQL} THEN 0 WHEN name ILIKE $2 ${ILIKE_ESCAPE_SQL} THEN 1 ELSE 2 END,
               CASE type
                 WHEN 'large_airport' THEN 0
                 WHEN 'medium_airport' THEN 1
@@ -101,7 +105,7 @@ export const airportRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (
               scheduled_service DESC,
               name
             LIMIT $3`,
-          [q, `%${q}%`, limit, `${q}%`],
+          [exact, contains, limit, prefix],
         );
         return { airports: result.rows as Airport[] };
       }

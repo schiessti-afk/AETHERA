@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine AS build
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 
@@ -12,6 +12,19 @@ RUN pnpm install --filter @aethera/ingestion...
 
 COPY services/ingestion ./services/ingestion
 COPY tsconfig.base.json ./
+COPY docker/point-packages-at-dist.cjs ./docker/point-packages-at-dist.cjs
 
+RUN pnpm --filter @aethera/ingestion... build \
+ && node docker/point-packages-at-dist.cjs \
+      packages/types \
+      packages/validation \
+      packages/flight-engine \
+      packages/anomaly-engine
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build --chown=node:node /app /app
+USER node
 WORKDIR /app/services/ingestion
-CMD ["pnpm", "exec", "tsx", "src/index.ts"]
+CMD ["node", "dist/index.js"]

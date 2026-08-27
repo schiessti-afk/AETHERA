@@ -81,20 +81,20 @@ describe("parseIdentityPattern / identityMatches", () => {
     expect(identityMatches(parseIdentityPattern("N?2AB"), ["N122AB"])).toBe(false);
   });
 
-  it("compiles /regex/ against callsign, icao24, or registration", () => {
+  it("treats slash-delimited text as a substring, not a regex", () => {
     const pattern = parseIdentityPattern("/^BAW\\d+$/");
-    expect(identityMatches(pattern, ["BAW123"])).toBe(true);
-    expect(identityMatches(pattern, ["BAW12W"])).toBe(false);
-    expect(identityMatches(pattern, [null, "G-GHEA", "BAW1"])).toBe(true);
+    expect(pattern.kind).toBe("substring");
+    expect(identityMatches(pattern, ["BAW123"])).toBe(false);
+    expect(identityMatches(pattern, ["/^BAW\\d+$/"])).toBe(true);
   });
 
-  it("rejects broken regex and overlong patterns", () => {
-    expect(parseIdentityPattern("/(/").kind).toBe("invalid");
-    expect(parseIdentityPattern(`/${"a".repeat(80)}/`).kind).toBe("invalid");
-    expect(identityMatches(parseIdentityPattern("/(/"), ["BAW123"])).toBe(false);
+  it("rejects overlong patterns and glob bombs", () => {
+    expect(parseIdentityPattern("a".repeat(80)).kind).toBe("invalid");
+    expect(parseIdentityPattern("*".repeat(11)).kind).toBe("invalid");
+    expect(identityMatches(parseIdentityPattern("*".repeat(11)), ["BAW123"])).toBe(false);
   });
 
-  it("does not treat a single leading slash as regex", () => {
+  it("does not treat a single leading slash as special", () => {
     const pattern = parseIdentityPattern("/BAW");
     expect(pattern.kind).toBe("substring");
     expect(identityMatches(pattern, ["/BAW12"])).toBe(true);

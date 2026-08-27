@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flightStateSchema, inBoundingBox, isValidLatitude, isValidLongitude } from "./index";
+import { flightStateSchema, inBoundingBox, isValidLatitude, isValidLongitude, clampSearchQuery, escapeIlike, SEARCH_QUERY_MAX_LENGTH } from "./index";
 
 describe("inBoundingBox", () => {
   const box = { west: -10, south: 35, east: 30, north: 60 };
@@ -76,5 +76,20 @@ describe("flightStateSchema", () => {
 
   it("rejects a negative velocity", () => {
     expect(flightStateSchema.safeParse({ ...valid, velocity: -5 }).success).toBe(false);
+  });
+});
+
+describe("escapeIlike / clampSearchQuery", () => {
+  it("escapes LIKE wildcards and backslashes", () => {
+    expect(escapeIlike("%%")).toBe("\\%\\%");
+    expect(escapeIlike("a_b")).toBe("a\\_b");
+    expect(escapeIlike("acme\\%")).toBe("acme\\\\\\%");
+  });
+
+  it("trims and caps search queries", () => {
+    expect(clampSearchQuery("  LH  ")).toBe("LH");
+    expect(clampSearchQuery("a".repeat(SEARCH_QUERY_MAX_LENGTH + 8))).toHaveLength(
+      SEARCH_QUERY_MAX_LENGTH,
+    );
   });
 });

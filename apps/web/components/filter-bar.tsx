@@ -13,7 +13,7 @@ export interface Filters {
   showGround: boolean;
   squawk: string;
   vertical: VerticalFilter;
-  /** Wildcard / regex over callsign, ICAO24, and registration. */
+  /** Wildcard over callsign, ICAO24, and registration. */
   identity: string;
 }
 
@@ -114,7 +114,7 @@ export function FilterBar({
           </div>
           <input
             type="text"
-            placeholder="TAP*  ·  *834A  ·  /BAW\d+/"
+            placeholder="TAP*  ·  *834A  ·  N12?"
             value={filters.identity}
             onChange={(e) => onChange({ ...filters, identity: e.target.value })}
             aria-invalid={identityInvalid}
@@ -127,7 +127,7 @@ export function FilterBar({
           <p className="mt-1 text-[10px] text-[var(--color-text-subtle)]">
             {identityInvalid
               ? "Invalid pattern — traffic is not hidden"
-              : "Callsign, ICAO24, or registration. * ? or /regex/"}
+              : "Callsign, ICAO24, or registration. * and ? wildcards"}
           </p>
 
           <label className="mb-2 mt-3 flex items-center justify-between text-[var(--color-text-muted)]">

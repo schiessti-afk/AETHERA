@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { config } from "./config";
 import { createRedis } from "./modules/redis";
@@ -19,7 +20,16 @@ async function main() {
   createSnapshotCache(redis);
   const app = Fastify({ logger: true });
 
-  await app.register(cors, { origin: config.corsOrigin });
+  await app.register(cors, { origin: config.corsOrigins });
+  await app.register(rateLimit, {
+    max: config.rateLimitMax,
+    timeWindow: config.rateLimitWindow,
+    // Probes must not compete with user traffic for the budget.
+    allowList: (request) => {
+      const path = request.url.split("?")[0];
+      return path === "/health" || path === "/ready";
+    },
+  });
   await app.register(websocket);
 
   await app.register(healthRoutes, { redis });
