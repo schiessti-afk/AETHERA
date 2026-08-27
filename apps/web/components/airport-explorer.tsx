@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import type { Airport } from "@aethera/types";
 import {
@@ -58,11 +58,20 @@ function Stat({ label, value }: { label: string; value: number }) {
 
 export function AirportExplorer() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const searchParams = useSearchParams();
+  const linkedIcao = searchParams.get("icao");
+  const [query, setQuery] = useState(linkedIcao ?? "");
   const [airports, setAirports] = useState<Airport[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(linkedIcao);
   const [traffic, setTraffic] = useState<AirportTraffic | null>(null);
   const [loading, setLoading] = useState(false);
+
+  /** Deep link from the Explore airport peek: preselect and filter to that airport. */
+  useEffect(() => {
+    if (!linkedIcao) return;
+    setQuery(linkedIcao);
+    setSelected(linkedIcao);
+  }, [linkedIcao]);
 
   useEffect(() => {
     let cancelled = false;

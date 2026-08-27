@@ -105,7 +105,7 @@ export function AirportPeek({
           Centre
         </button>
         <Link
-          href="/airports"
+          href={`/airports?icao=${airport.icao}`}
           className="flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] py-1 text-center text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
         >
           Details
