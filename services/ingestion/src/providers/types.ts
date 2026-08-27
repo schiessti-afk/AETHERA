@@ -1,9 +1,1 @@
-import type { FlightDataProvider, FlightState } from "@aethera/types";
-
-export type { FlightDataProvider };
-
-export interface ProviderSnapshot {
-  states: FlightState[];
-  sourceTime: string;
-  creditsRemaining?: number;
-}
+export type { FlightDataProvider, ProviderSnapshot } from "@aethera/types";

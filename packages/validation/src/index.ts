@@ -61,6 +61,38 @@ export const aircraftWatchSchema = z.object({
   icao24: z.string().min(1).max(12).nullable(),
 });
 
+const isoDate = z.string().min(1).refine((value) => Number.isFinite(Date.parse(value)), {
+  message: "Invalid timestamp",
+});
+
+export const historyRegionQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  west: z.coerce.number(),
+  south: z.coerce.number(),
+  east: z.coerce.number(),
+  north: z.coerce.number(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+export const historyAircraftQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+export const historySessionsQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  icao24: z.string().optional(),
+  west: z.coerce.number().optional(),
+  south: z.coerce.number().optional(),
+  east: z.coerce.number().optional(),
+  north: z.coerce.number().optional(),
+});
+
 export function isValidLatitude(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
 }

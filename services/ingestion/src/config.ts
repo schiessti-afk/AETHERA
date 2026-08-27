@@ -38,6 +38,10 @@ export const config = {
   databaseUrl:
     process.env.DATABASE_URL ??
     "postgres://aethera:aethera_password@localhost:55432/aethera",
+  /** Days of packed track history to keep. 30 days is ~7.4 GB at current traffic. */
+  historyRetentionDays: Number(process.env.HISTORY_RETENTION_DAYS ?? 30),
+  /** Close an inferred session after this much silence. Generous: coverage gaps are common. */
+  sessionGapMinutes: Number(process.env.HISTORY_SESSION_GAP_MINUTES ?? 120),
   /**
    * Detection thresholds — PRODUCT_SPEC §26.4 requires these to be tunable. Defaults
    * live in @aethera/anomaly-engine and were calibrated against real traffic; see the

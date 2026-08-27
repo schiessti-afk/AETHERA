@@ -8,6 +8,8 @@ import { KEYS } from "./publisher/redis";
 import { AnomalyStore } from "./anomaly/store";
 import { AnomalyDetector } from "./anomaly/detector";
 import { AirspaceSampler } from "./analytics/sampler";
+import { TrackFlusher } from "./history/flusher";
+import { SessionTracker } from "./history/tracker";
 
 async function main() {
   const redis = createClient({ url: config.redisUrl });
@@ -40,6 +42,8 @@ async function main() {
     config.bounds,
     detector,
     new AirspaceSampler(pool),
+    new TrackFlusher(redis, pool),
+    new SessionTracker(pool, config.sessionGapMinutes),
   );
 
   poller.start();

@@ -12,7 +12,7 @@ const empty: SystemStats = {
   descending: 0,
   lastUpdate: null,
   sourceTime: null,
-  creditsRemaining: null,
+  quotaRemaining: null,
   pollIntervalMs: null,
   staleAfterMs: null,
   lastError: null,
@@ -65,8 +65,6 @@ export function useSystemStats(): SystemStatsState {
         const next = await fetchStats();
         if (cancelled) return;
         setStats(next);
-        setStatus(deriveStatus(next));
-
         const pollMs = next.pollIntervalMs ?? DEFAULT_POLL_MS;
         if (next.sourceTime) {
           const elapsed = Date.now() - Date.parse(next.sourceTime);
@@ -75,7 +73,15 @@ export function useSystemStats(): SystemStatsState {
           setNextPollEtaMs(null);
         }
 
-        const nextDelay = pollMs + POLL_BUFFER_MS;
+        const statusNow = deriveStatus(next);
+        setStatus(statusNow);
+
+        // When delayed, check again soon so LIVE returns as soon as a poll lands
+        // rather than waiting a full interval on a stale snapshot.
+        const nextDelay =
+          statusNow === "DELAYED" || statusNow === "STALE" || statusNow === "DEGRADED"
+            ? 15_000
+            : pollMs + POLL_BUFFER_MS;
         if (!cancelled) timerRef.current = setTimeout(() => void tick(), nextDelay);
       } catch {
         if (!cancelled) {

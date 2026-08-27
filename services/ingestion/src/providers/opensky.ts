@@ -1,8 +1,7 @@
-import type { BoundingBox, FlightState } from "@aethera/types";
+import type { BoundingBox, FlightDataProvider, FlightState, ProviderSnapshot } from "@aethera/types";
 import { isValidLatitude, isValidLongitude } from "@aethera/validation";
 import { OpenSkyAuth } from "./opensky-auth";
 import { OpenSkyRateLimitError } from "./rate-limit-error";
-import type { FlightDataProvider, ProviderSnapshot } from "./types";
 
 const OPENSKY_URL = "https://opensky-network.org/api/states/all";
 
@@ -32,10 +31,16 @@ interface OpenSkyResponse {
 }
 
 export class OpenSkyProvider implements FlightDataProvider {
+  readonly id = "opensky";
   private readonly auth: OpenSkyAuth;
+  private lastQuotaRemaining: number | undefined;
 
   constructor(clientId: string, clientSecret: string) {
     this.auth = new OpenSkyAuth(clientId, clientSecret);
+  }
+
+  quotaRemaining(): number | undefined {
+    return this.lastQuotaRemaining;
   }
 
   async getStates(bounds?: BoundingBox): Promise<FlightState[]> {
@@ -87,12 +92,12 @@ export class OpenSkyProvider implements FlightDataProvider {
       .map((vector) => normalizeVector(vector, receivedAt))
       .filter((state): state is FlightState => state !== null);
     const remainingHeader = response.headers.get("x-rate-limit-remaining");
-    const creditsRemaining = remainingHeader != null ? Number(remainingHeader) : undefined;
+    const remaining = remainingHeader != null ? Number(remainingHeader) : undefined;
+    this.lastQuotaRemaining = Number.isFinite(remaining) ? remaining : undefined;
 
     return {
       states,
       sourceTime,
-      creditsRemaining: Number.isFinite(creditsRemaining) ? creditsRemaining : undefined,
     };
   }
 }

@@ -116,3 +116,18 @@ export {
   SPEED_BANDS_KT,
   LEVEL_FPM,
 } from "./aggregate";
+export {
+  utcHourStartMs,
+  secondsOffset,
+  packHour,
+  packByHour,
+  expandHour,
+  type ObservedTrackPoint,
+  type PackedHour,
+} from "./track-pack";
+export {
+  interpolateTrack,
+  DEFAULT_TRACK_GAP_MS,
+  type TrackSample,
+  type InterpolatedTrack,
+} from "./track-interpolate";

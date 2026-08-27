@@ -1,10 +1,11 @@
-import type { BoundingBox, FlightState } from "@aethera/types";
-import { OpenSkyProvider } from "../providers/opensky";
-import { OpenSkyRateLimitError } from "../providers/rate-limit-error";
+import type { BoundingBox, FlightDataProvider, FlightState } from "@aethera/types";
+import { ProviderRateLimitError } from "../providers/rate-limit-error";
 import { validateStates } from "../normalizer";
 import { RedisPublisher } from "../publisher/redis";
 import type { AnomalyDetector } from "../anomaly/detector";
 import type { AirspaceSampler } from "../analytics/sampler";
+import type { TrackFlusher } from "../history/flusher";
+import type { SessionTracker } from "../history/tracker";
 
 export class Poller {
   private timer: NodeJS.Timeout | null = null;
@@ -12,12 +13,14 @@ export class Poller {
   private inFlight = false;
 
   constructor(
-    private readonly provider: OpenSkyProvider,
+    private readonly provider: FlightDataProvider,
     private readonly publisher: RedisPublisher,
     private readonly intervalMs: number,
     private readonly bounds?: BoundingBox,
     private readonly detector?: AnomalyDetector,
     private readonly sampler?: AirspaceSampler,
+    private readonly flusher?: TrackFlusher,
+    private readonly sessions?: SessionTracker,
   ) {}
 
   start(): void {
@@ -66,6 +69,7 @@ export class Poller {
     if (this.inFlight || this.stopped) return;
     this.inFlight = true;
     let nextDelay = this.intervalMs;
+    let statesForHistory: FlightState[] | null = null;
     try {
       const snapshot = await this.provider.fetchSnapshot(this.bounds);
       const states = validateStates(snapshot.states);
@@ -73,11 +77,14 @@ export class Poller {
       const { previous } = await this.publisher.mergeSnapshot(
         states,
         snapshot.sourceTime,
-        snapshot.creditsRemaining,
+        this.provider.quotaRemaining(),
       );
-      const remaining =
-        snapshot.creditsRemaining != null ? ` credits=${snapshot.creditsRemaining}` : "";
-      console.log(`ingestion: stored ${states.length} observed aircraft${remaining}`);
+      statesForHistory = states;
+      const remaining = this.provider.quotaRemaining();
+      const remainingLabel = remaining != null ? ` quota=${remaining}` : "";
+      console.log(
+        `ingestion: stored ${states.length} observed aircraft from ${this.provider.id}${remainingLabel}`,
+      );
 
       // Detection runs after the snapshot is stored: a failure here must not cost us
       // the live picture, which is the product's primary obligation.
@@ -97,7 +104,7 @@ export class Poller {
         await this.sampler.record(states, activeAnomalies);
       }
     } catch (error) {
-      if (error instanceof OpenSkyRateLimitError) {
+      if (error instanceof ProviderRateLimitError) {
         nextDelay = Math.max(this.intervalMs, error.retryAfterSeconds * 1000);
         console.warn(`ingestion: ${error.message}`);
         await this.publisher.recordFailure(error.message);
@@ -106,9 +113,45 @@ export class Poller {
         console.error(`ingestion: poll failed: ${message}`);
         await this.publisher.recordFailure(message);
       }
+      statesForHistory = null;
     } finally {
       this.inFlight = false;
       this.schedule(nextDelay);
+    }
+
+    // History persistence must not delay the next live poll — a long flush was
+    // stretching lastSuccessAt past the client's LIVE threshold (DELAYED).
+    if (statesForHistory) this.enqueueHistory(statesForHistory);
+  }
+
+  private historyQueued: FlightState[] | null = null;
+  private historyBusy = false;
+
+  private enqueueHistory(states: FlightState[]): void {
+    this.historyQueued = states;
+    void this.drainHistory();
+  }
+
+  private async drainHistory(): Promise<void> {
+    if (this.historyBusy) return;
+    this.historyBusy = true;
+    try {
+      while (this.historyQueued) {
+        const states = this.historyQueued;
+        this.historyQueued = null;
+        if (this.sessions) {
+          await this.sessions.observe(states);
+        }
+        if (this.flusher) {
+          await this.flusher.maybeFlush();
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`ingestion: history persist failed: ${message}`);
+    } finally {
+      this.historyBusy = false;
+      if (this.historyQueued) void this.drainHistory();
     }
   }
 }

@@ -3,8 +3,12 @@ import type {
   Airport,
   AirspaceSample,
   Anomaly,
+  BoundingBox,
+  FlightSession,
   FlightState,
+  HistorySummary,
   SystemStats,
+  TrackHourExpanded,
 } from "@aethera/types";
 import { apiUrl } from "./config";
 
@@ -24,10 +28,9 @@ export function fetchAircraft(): Promise<{ aircraft: FlightState[]; count: numbe
   return getJson("/api/aircraft");
 }
 
-/** Observed state plus whatever registry metadata exists for the airframe. */
 export function fetchAircraftDetail(
   icao24: string,
-): Promise<FlightState & { metadata: AircraftMetadata | null }> {
+): Promise<(Partial<FlightState> & { metadata: AircraftMetadata | null; observed?: boolean })> {
   return getJson(`/api/aircraft/${encodeURIComponent(icao24)}`);
 }
 
@@ -138,4 +141,85 @@ export function search(q: string): Promise<{
   airports: Array<{ icao: string; iata?: string; name: string }>;
 }> {
   return getJson(`/api/search?q=${encodeURIComponent(q)}`);
+}
+
+// --- History ----------------------------------------------------------------
+
+function historyBoundsQuery(bounds: BoundingBox): string {
+  return `west=${bounds.west}&south=${bounds.south}&east=${bounds.east}&north=${bounds.north}`;
+}
+
+export function fetchHistorySummary(
+  from: string,
+  to: string,
+  bounds: BoundingBox,
+): Promise<HistorySummary> {
+  return getJson(
+    `/api/history/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&${historyBoundsQuery(bounds)}`,
+  );
+}
+
+export interface HistoryRegionPage {
+  from: string;
+  to: string;
+  bounds: BoundingBox;
+  hours: TrackHourExpanded[];
+  count: number;
+  nextCursor: string | null;
+}
+
+export function fetchHistoryRegion(params: {
+  from: string;
+  to: string;
+  bounds: BoundingBox;
+  cursor?: string | null;
+  limit?: number;
+}): Promise<HistoryRegionPage> {
+  const query = new URLSearchParams({
+    from: params.from,
+    to: params.to,
+    west: String(params.bounds.west),
+    south: String(params.bounds.south),
+    east: String(params.bounds.east),
+    north: String(params.bounds.north),
+  });
+  if (params.cursor) query.set("cursor", params.cursor);
+  if (params.limit) query.set("limit", String(params.limit));
+  return getJson(`/api/history/region?${query}`);
+}
+
+export async function fetchAllHistoryHours(params: {
+  from: string;
+  to: string;
+  bounds: BoundingBox;
+  onPage?: (loadedHours: number) => void;
+}): Promise<TrackHourExpanded[]> {
+  const hours: TrackHourExpanded[] = [];
+  let cursor: string | null = null;
+  let pages = 0;
+  do {
+    const page = await fetchHistoryRegion({ ...params, cursor });
+    hours.push(...page.hours);
+    cursor = page.nextCursor;
+    pages += 1;
+    params.onPage?.(hours.length);
+  } while (cursor && pages < 50);
+  return hours;
+}
+
+export function fetchHistorySessions(params: {
+  from: string;
+  to: string;
+  bounds?: BoundingBox;
+  icao24?: string;
+}): Promise<{ sessions: FlightSession[]; count: number }> {
+  const query = new URLSearchParams({ from: params.from, to: params.to });
+  if (params.icao24) query.set("icao24", params.icao24);
+  if (params.bounds) {
+    query.set("west", String(params.bounds.west));
+    query.set("south", String(params.bounds.south));
+    query.set("east", String(params.bounds.east));
+    query.set("north", String(params.bounds.north));
+  }
+  return getJson(`/api/history/sessions?${query}`);
 }

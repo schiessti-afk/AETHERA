@@ -13,6 +13,7 @@ import {
 import { StatusIndicator } from "@aethera/ui";
 import type { ConnectionStatus } from "@aethera/types";
 import type { ReactNode } from "react";
+import { useReplayMode } from "@/hooks/use-replay-mode";
 
 const nav = [
   { href: "/", label: "Explore", icon: Compass },
@@ -50,7 +51,13 @@ export function AppShell({
   nextPollEtaMs?: number | null;
 }) {
   const pathname = usePathname();
-  const etaLabel = status === "LIVE" || status === "DELAYED" ? formatEta(nextPollEtaMs) : null;
+  const replay = useReplayMode();
+  const etaLabel =
+    !replay.active && (status === "LIVE" || status === "DELAYED")
+      ? formatEta(nextPollEtaMs)
+      : null;
+  const observedCount = replay.active ? replay.observed : observed;
+  const airborneCount = replay.active ? replay.airborne : airborne;
 
   return (
     <div className="flex h-dvh flex-col bg-[var(--color-background)] text-[var(--color-text)]">
@@ -64,17 +71,39 @@ export function AppShell({
           </span>
         </div>
         <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent("aethera:open-search"))}
-            className="hidden items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)] md:flex"
-            aria-label="Search aircraft or airport"
-          >
-            <Search size={14} />
-            <span>Search</span>
-            <kbd className="ml-4 text-[10px] text-[var(--color-text-subtle)]">⌘ K</kbd>
-          </button>
-          <StatusIndicator status={status} />
+          {!replay.active ? (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("aethera:open-search"))}
+              className="hidden items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)] md:flex"
+              aria-label="Search aircraft or airport"
+            >
+              <Search size={14} />
+              <span>Search</span>
+              <kbd className="ml-4 text-[10px] text-[var(--color-text-subtle)]">⌘ K</kbd>
+            </button>
+          ) : (
+            <Link
+              href="/"
+              className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-accent)] hover:underline"
+            >
+              Return to live
+            </Link>
+          )}
+          {replay.active && replay.timestamp ? (
+            <div
+              className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]"
+              role="status"
+            >
+              <span aria-hidden="true">●</span>
+              <span>Replay</span>
+              <span className="tabular-nums text-[var(--color-text)] normal-case tracking-normal">
+                {replay.timestamp.slice(0, 10)} {replay.timestamp.slice(11, 19)} UTC
+              </span>
+            </div>
+          ) : (
+            <StatusIndicator status={status} />
+          )}
         </div>
       </header>
 
@@ -110,29 +139,33 @@ export function AppShell({
       <footer className="z-[30] flex h-10 shrink-0 items-center gap-6 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
         <span>
           <strong className="mr-2 tabular-nums text-[var(--color-text)]">
-            {observed.toLocaleString()}
+            {observedCount.toLocaleString()}
           </strong>
           Observed
         </span>
         <span>
           <strong className="mr-2 tabular-nums text-[var(--color-text)]">
-            {airborne.toLocaleString()}
+            {airborneCount.toLocaleString()}
           </strong>
           Airborne
         </span>
-        <span className="hidden lg:inline">
-          <strong className="mr-2 tabular-nums text-[var(--color-text)]">
-            {climbing.toLocaleString()}
-          </strong>
-          Climbing
-        </span>
-        <span className="hidden lg:inline">
-          <strong className="mr-2 tabular-nums text-[var(--color-text)]">
-            {descending.toLocaleString()}
-          </strong>
-          Descending
-        </span>
-        {alerts > 0 ? (
+        {replay.active ? null : (
+          <>
+            <span className="hidden lg:inline">
+              <strong className="mr-2 tabular-nums text-[var(--color-text)]">
+                {climbing.toLocaleString()}
+              </strong>
+              Climbing
+            </span>
+            <span className="hidden lg:inline">
+              <strong className="mr-2 tabular-nums text-[var(--color-text)]">
+                {descending.toLocaleString()}
+              </strong>
+              Descending
+            </span>
+          </>
+        )}
+        {alerts > 0 && !replay.active ? (
           <Link href="/alerts" className="text-[var(--color-alert)] hover:underline">
             <strong className="mr-2 tabular-nums">{alerts.toLocaleString()}</strong>
             {alerts === 1 ? "Alert" : "Alerts"}

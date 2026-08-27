@@ -15,7 +15,10 @@ services:
       - ./database/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
       - ./database/migrations/002_anomaly_kind.sql:/docker-entrypoint-initdb.d/002_anomaly_kind.sql
       - ./database/migrations/003_phase3_context.sql:/docker-entrypoint-initdb.d/003_phase3_context.sql
-      - ./database/seeds/001_airports.sql:/docker-entrypoint-initdb.d/004_airports.sql
+      - ./database/migrations/004_sample_retention.sql:/docker-entrypoint-initdb.d/004_sample_retention.sql
+      - ./database/seeds/001_airports.sql:/docker-entrypoint-initdb.d/005_airports.sql
+      - ./database/migrations/005_phase4_history.sql:/docker-entrypoint-initdb.d/006_phase4_history.sql
+      - ./database/migrations/006_session_upsert.sql:/docker-entrypoint-initdb.d/007_session_upsert.sql
     ports:
       - "${POSTGRES_PORT:-55432}:5432"
     healthcheck:

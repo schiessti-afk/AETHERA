@@ -10,6 +10,7 @@ import { airportRoutes } from "./routes/airports";
 import { searchRoutes } from "./routes/search";
 import { anomalyRoutes } from "./routes/anomalies";
 import { analyticsRoutes } from "./routes/analytics";
+import { historyRoutes } from "./routes/history";
 import { websocketRoutes } from "./websocket/gateway";
 
 async function main() {
@@ -26,6 +27,7 @@ async function main() {
   await app.register(searchRoutes, { redis });
   await app.register(anomalyRoutes, { redis });
   await app.register(analyticsRoutes, { redis });
+  await app.register(historyRoutes);
   await app.register(websocketRoutes, { redis });
 
   try {

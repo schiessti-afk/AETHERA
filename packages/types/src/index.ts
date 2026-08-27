@@ -158,10 +158,20 @@ export interface ViewportSubscribeMessage {
   bounds: BoundingBox;
 }
 
+export interface HistoryHealth {
+  lastFlushAt: string | null;
+  lastFlushRows: number | null;
+  lastFlushError: string | null;
+  oldestHour: string | null;
+  newestHour: string | null;
+  retentionDays: number;
+}
+
 export interface HealthStatus {
   status: "healthy" | "degraded" | "unhealthy";
   services: Record<string, "healthy" | "degraded" | "unhealthy">;
   dataAgeSeconds?: number;
+  history?: HistoryHealth;
 }
 
 export interface SystemStats {
@@ -172,12 +182,69 @@ export interface SystemStats {
   descending: number;
   lastUpdate: string | null;
   sourceTime: string | null;
-  creditsRemaining: number | null;
+  /** Remaining provider request budget, if the current provider exposes one. */
+  quotaRemaining: number | null;
   pollIntervalMs: number | null;
   staleAfterMs: number | null;
   lastError: string | null;
 }
 
+/**
+ * A normalized snapshot from any flight-data source. Provider-specific quota
+ * accounting stays on the provider, not on this payload (PHASE4 W5).
+ */
+export interface ProviderSnapshot {
+  states: FlightState[];
+  sourceTime: string;
+}
+
 export interface FlightDataProvider {
+  readonly id: string;
+  fetchSnapshot(bounds?: BoundingBox): Promise<ProviderSnapshot>;
   getStates(bounds?: BoundingBox): Promise<FlightState[]>;
+  /** Remaining request budget, if this provider exposes one. */
+  quotaRemaining(): number | undefined;
+}
+
+/** One observed position after the API has expanded a packed aircraft-hour. */
+export interface TrackPoint {
+  time: string;
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+}
+
+export interface TrackHourExpanded {
+  icao24: Icao24;
+  hourStart: string;
+  points: TrackPoint[];
+}
+
+/**
+ * An inferred (icao24, callsign) session. Derived, not observed — coverage gaps
+ * are common, so this is not a durable "flight record" (PHASE4 D3).
+ */
+export interface FlightSession {
+  id: number;
+  icao24: Icao24;
+  callsign: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  pointCount: number;
+  minLat: number | null;
+  maxLat: number | null;
+  minLon: number | null;
+  maxLon: number | null;
+  inferred: true;
+}
+
+export interface HistorySummary {
+  from: string;
+  to: string;
+  aircraftCount: number;
+  pointCount: number;
+  hourCount: number;
+  earliest: string | null;
+  latest: string | null;
+  retentionDays: number;
 }

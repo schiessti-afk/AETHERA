@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Locate, Route, Crosshair } from "lucide-react";
-import type { AircraftMetadata } from "@aethera/types";
+import type { AircraftMetadata, FlightState } from "@aethera/types";
 import { fetchAircraftDetail } from "@/lib/api";
 import { Panel } from "@aethera/ui";
 import { dataAgeSeconds } from "@aethera/flight-engine";
@@ -35,15 +35,29 @@ export function AircraftPanel({
   onClose,
   onFollow,
   onRecenter,
+  flight: flightProp,
+  clockMs,
+  interpolated = false,
+  trailVisible: trailVisibleProp,
+  onToggleTrail,
+  hideAlerts = false,
 }: {
   icao24: string;
   isFollowed: boolean;
   onClose: () => void;
   onFollow: () => void;
   onRecenter: (longitude: number, latitude: number) => void;
+  flight?: FlightState;
+  /** Clock used for last-contact age. Replay passes the playback cursor. */
+  clockMs?: number;
+  interpolated?: boolean;
+  trailVisible?: boolean;
+  onToggleTrail?: () => void;
+  hideAlerts?: boolean;
 }) {
-  const { aircraft, trailVisible, alerted } = useFlightStore();
-  const flight = aircraft.get(icao24);
+  const live = useFlightStore();
+  const flight = flightProp ?? live.aircraft.get(icao24);
+  const trailVisible = trailVisibleProp ?? live.trailVisible;
   const [metadata, setMetadata] = useState<AircraftMetadata | null>(null);
 
   // Registry identity is fetched per selection and kept out of the live store: it is
@@ -64,7 +78,7 @@ export function AircraftPanel({
   }, [icao24]);
   // A selected aircraft renders in the selection colour, which masks its alert colour
   // on the map — so if something is open against it, the panel has to say so.
-  const alertSeverity = alerted.get(icao24);
+  const alertSeverity = hideAlerts ? undefined : live.alerted.get(icao24);
 
   if (!flight) {
     return (
@@ -83,7 +97,8 @@ export function AircraftPanel({
     );
   }
 
-  const ageS = dataAgeSeconds(flight.lastSeen);
+  const now = clockMs ?? Date.now();
+  const ageS = dataAgeSeconds(flight.lastSeen, now);
   const status = flight.onGround ? "ON GROUND" : ageS > 180 ? "STALE" : "AIRBORNE";
 
   return (
@@ -103,10 +118,10 @@ export function AircraftPanel({
     >
       <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
         <span>{status}</span>
-        {!flight.onGround && ageS > 2 && ageS <= 180 ? (
+        {!flight.onGround && (interpolated || (ageS > 2 && ageS <= 180)) ? (
           <span
             className="text-[var(--color-text-subtle)]"
-            title="Position is dead-reckoned from the last observation, not a new report"
+            title="Position is estimated from stored observations, not a new report"
           >
             · position estimated
           </span>
@@ -154,7 +169,7 @@ export function AircraftPanel({
       <div className="grid grid-cols-2 gap-3 text-[13px]">
         <Field label="ICAO24" value={flight.icao24.toUpperCase()} />
         <Field label="Squawk" value={formatOrDash(flight.squawk)} />
-        <Field label="Last contact" value={formatRelativeTime(flight.lastSeen)} />
+        <Field label="Last contact" value={formatRelativeTime(flight.lastSeen, now)} />
         <Field
           label="Position"
           value={
@@ -180,7 +195,7 @@ export function AircraftPanel({
         </button>
         <button
           type="button"
-          onClick={() => flightStore.toggleTrail()}
+          onClick={() => (onToggleTrail ? onToggleTrail() : flightStore.toggleTrail())}
           className={`flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] transition-colors ${
             trailVisible
               ? "text-[var(--color-accent)]"

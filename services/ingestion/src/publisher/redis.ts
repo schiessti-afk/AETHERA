@@ -1,7 +1,7 @@
 import { createClient } from "redis";
 import type { Anomaly, FlightState, RealtimeEvent } from "@aethera/types";
 
-type RedisClient = ReturnType<typeof createClient>;
+export type RedisClient = ReturnType<typeof createClient>;
 
 export const KEYS = {
   state: "flights:state",
@@ -43,7 +43,7 @@ export class RedisPublisher {
   async mergeSnapshot(
     states: FlightState[],
     sourceTime: string,
-    creditsRemaining?: number,
+    quotaRemaining?: number,
   ): Promise<{ previous: FlightState[] }> {
     const existingRaw = await this.redis.hGetAll(KEYS.state);
     const now = Date.now();
@@ -114,8 +114,8 @@ export class RedisPublisher {
     pipeline.hSet(KEYS.meta, "aircraftCount", String(states.length));
     pipeline.hSet(KEYS.meta, "observedCount", String(finalKeys.size));
     pipeline.hSet(KEYS.meta, "lastError", "");
-    if (creditsRemaining != null) {
-      pipeline.hSet(KEYS.meta, "creditsRemaining", String(creditsRemaining));
+    if (quotaRemaining != null) {
+      pipeline.hSet(KEYS.meta, "quotaRemaining", String(quotaRemaining));
     }
 
     await pipeline.exec();

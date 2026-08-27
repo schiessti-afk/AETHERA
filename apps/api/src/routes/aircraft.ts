@@ -58,17 +58,9 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
     return { aircraft, count: aircraft.length };
   });
 
-  app.get<{ Params: { icao24: string } }>("/api/aircraft/:icao24", async (request, reply) => {
+  app.get<{ Params: { icao24: string } }>("/api/aircraft/:icao24", async (request) => {
     const icao24 = request.params.icao24.toLowerCase();
     const raw = await opts.redis.hGet(KEYS.state, icao24);
-    if (!raw) {
-      return reply.code(404).send({ error: "Aircraft not currently observed" });
-    }
-
-    const state = JSON.parse(raw) as FlightState;
-
-    // Registry metadata is strictly secondary to telemetry (§24.4) — if the lookup
-    // fails, the observed state is still returned rather than failing the request.
     let metadata: AircraftMetadata | null = null;
     try {
       const result = await pool.query(
@@ -81,7 +73,12 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
       metadata = null;
     }
 
-    return { ...state, metadata };
+    if (!raw) {
+      return { icao24, metadata, observed: false };
+    }
+
+    const state = JSON.parse(raw) as FlightState;
+    return { ...state, metadata, observed: true };
   });
 
   app.get<{ Params: { icao24: string } }>(
@@ -127,7 +124,12 @@ export const aircraftRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async 
       descending: summary.descending,
       lastUpdate: meta.lastSuccessAt ?? null,
       sourceTime: meta.sourceTime ?? null,
-      creditsRemaining: meta.creditsRemaining != null ? Number(meta.creditsRemaining) : null,
+      quotaRemaining:
+        meta.quotaRemaining != null
+          ? Number(meta.quotaRemaining)
+          : meta.creditsRemaining != null
+            ? Number(meta.creditsRemaining)
+            : null,
       pollIntervalMs: meta.pollIntervalMs != null ? Number(meta.pollIntervalMs) : null,
       staleAfterMs: meta.staleAfterMs != null ? Number(meta.staleAfterMs) : null,
       lastError: meta.lastError ? meta.lastError : null,

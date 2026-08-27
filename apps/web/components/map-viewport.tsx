@@ -1,66 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Airport, AnomalySeverity, BoundingBox, FlightState } from "@aethera/types";
+import type { Airport, BoundingBox, FlightState } from "@aethera/types";
 import { dataAgeSeconds, interpolatePosition, positionConfidence } from "@aethera/flight-engine";
 import { mapStyleUrl } from "@/lib/config";
 import { flightStore } from "@/lib/flight-store";
 import { useFlightConnection, useFlightStore } from "@/hooks/use-flight-store";
 import { AIRCRAFT_ICON_ATLAS, AIRCRAFT_ICON_MAPPING } from "@/lib/aircraft-icon";
+import {
+  AIRPORT_MIN_ZOOM,
+  COLOR_AIRPORT,
+  COLOR_DEFAULT,
+  COLOR_GROUND,
+  COLOR_HOVER,
+  COLOR_LABEL,
+  COLOR_SELECTED,
+  COLOR_STALE,
+  LABEL_MAX_VISIBLE,
+  LABEL_MIN_ZOOM,
+  SEVERITY_COLOR,
+  iconSizeForZoom,
+} from "@/lib/map-style";
 import { AircraftPanel } from "@/components/aircraft-panel";
 import { FilterBar, type Filters, defaultFilters, applyFilters } from "@/components/filter-bar";
 import { CommandPalette } from "@/components/command-palette";
 import { fetchAirports } from "@/lib/api";
 import { AirportPeek } from "@/components/airport-peek";
 
-const COLOR_DEFAULT: [number, number, number] = [139, 155, 176]; // --color-text-muted
-const COLOR_GROUND: [number, number, number] = [93, 109, 130]; // --color-text-subtle
-const COLOR_HOVER: [number, number, number] = [232, 238, 246]; // --color-text
-const COLOR_SELECTED: [number, number, number] = [62, 224, 200]; // --color-accent
-const COLOR_STALE: [number, number, number] = [93, 109, 130];
-const COLOR_LABEL: [number, number, number] = [200, 212, 226];
-
-/** Design §8 alert hierarchy, matching the semantic tokens in packages/ui/src/styles.css. */
-const SEVERITY_COLOR: Record<AnomalySeverity, [number, number, number]> = {
-  critical: [224, 74, 74], // --color-danger
-  high: [224, 122, 62], // --color-alert
-  medium: [224, 180, 74], // --color-warning
-  info: [139, 155, 176], // --color-text-muted
-};
-
 const VIEWPORT_DEBOUNCE_MS = 350;
-
-/**
- * Icon size by zoom — PRODUCT_SPEC §10.4 requires information density to change with
- * zoom. At world view a global snapshot is ~12,000 aircraft, and drawing those at close-
- * view size turns Europe into a solid mass of overlapping glyphs where nothing (an alert
- * included) is findable. Shrinking the marker keeps every observed aircraft on screen —
- * they are never culled, which would misrepresent what was observed — while restoring
- * the shape of the traffic.
- */
-function iconSizeForZoom(zoom: number): number {
-  if (zoom < 4) return 11;
-  if (zoom < 6) return 15;
-  if (zoom < 8) return 19;
-  return 22;
-}
-
-/** Below this zoom, callsign labels are never drawn: they cannot resolve. */
-const LABEL_MIN_ZOOM = 7;
-/**
- * Even when zoomed in, labels are suppressed while too many aircraft are in view.
- * §10.4: "when density is high, labels recede and selection/hover remains the path
- * to detail".
- */
-const LABEL_MAX_VISIBLE = 220;
-
-/**
- * Airports only appear once the view is regional or closer. PRODUCT_SPEC §19.3 requires
- * markers "at appropriate zoom levels" that "remain secondary to aircraft" — at world
- * view they would be thousands of dots competing with the traffic they exist to anchor.
- */
-const AIRPORT_MIN_ZOOM = 6;
-const COLOR_AIRPORT: [number, number, number] = [120, 140, 165];
 
 /** Follow mode camera pacing — see the note at the follow block in renderFrame. */
 const FOLLOW_MIN_INTERVAL_MS = 400;
