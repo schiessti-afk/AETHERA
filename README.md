@@ -24,7 +24,7 @@ AETHERA presents aircraft and states that are **observable through its configure
 - Anomaly and emergency-squawk detection
 - Aircraft intelligence panel
 - Airport traffic views
-- Airspace analytics and density
+- Airspace analytics
 - Historical exploration as data becomes available
 - Realtime updates across the map and panels
 

@@ -56,7 +56,7 @@ Phase 2 — Intelligence
    Anomaly engine, Alerts, trails, enrichment
 
 Phase 3 — Context
-   Airport traffic, density, airspace statistics
+   Airport traffic, airspace statistics
 
 Phase 4 — Memory
    Historical replay, durable tracks, platform growth
@@ -183,7 +183,7 @@ This phase ships **Alerts** and deepens Explore. Unusual states become first-cla
 - Machine-learning anomaly detection
 - Predictive routing or intent estimation
 - Airport traffic pages
-- Density heatmaps and statistical analytics
+- Statistical analytics
 - Full historical replay
 - Custom alert rules for end users
 
@@ -205,7 +205,7 @@ This phase ships **Airports** and **Analytics**. AETHERA should answer questions
 ### Goals
 
 - Turn airports into first-class destinations with surrounding traffic.
-- Visualize airspace density and movement patterns from observed data.
+- Visualize movement patterns from observed data.
 - Add statistics that support the map instead of replacing it.
 - Keep aggregation honest: charts describe what AETHERA observed, not the entire sky.
 
@@ -217,19 +217,17 @@ This phase ships **Airports** and **Analytics**. AETHERA should answer questions
 - Focused map view around a selected airport
 - Arrivals, departures, and nearby airborne traffic as observed
 - Airport-centric counts, altitude bands, and recent events
-- Congestion and activity cues based on observed density, not operational claims
+- Congestion and activity cues based on observed traffic, not operational claims
 
 **Analytics**
 
 - Airspace statistics: observed counts, altitude distribution, speed bands
-- Density visualization for the current viewport or selected region
 - Time-of-day and regional pattern views from retained aggregates
 - Traffic composition where metadata allows (airborne vs ground, type, operator)
 - Export of summary figures for a selected window, clearly marked as observed
 
 **Explore / Alerts integration**
 
-- Density as an optional map layer, off by default
 - Airport peek from the map without leaving Explore
 - Anomaly rates as an analytics signal, not a separate product
 
@@ -244,7 +242,7 @@ This phase ships **Airports** and **Analytics**. AETHERA should answer questions
 ### Success looks like
 
 - Selecting an airport immediately shows what is happening around it right now.
-- Density and charts help a user understand a region without hiding aircraft.
+- Charts help a user understand a region without hiding aircraft.
 - Every statistic is attributable to an observation window and a data source.
 - Airports and Analytics feel like lenses on the same live system, not separate apps.
 

@@ -748,20 +748,6 @@ Do not make color the sole altitude indicator.
 
 ---
 
-## 28. Density Visualization
-
-The density layer should remain subtle.
-
-The goal is to reveal:
-
-> Where is the airspace busiest?
-
-without turning the entire map into a bright heatmap.
-
-Density should sit underneath aircraft visualization.
-
----
-
 ## 29. Map Styling
 
 The map should use a dark, low-noise cartographic style.
@@ -1403,7 +1389,7 @@ Examples:
 
 > Where is traffic concentrated?
 
-→ Density map.
+→ Airport-area traffic breakdown.
 
 > What altitude is traffic using?
 

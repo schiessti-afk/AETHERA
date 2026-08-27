@@ -19,7 +19,7 @@ It transforms live aircraft observation data into an elegant, interactive experi
 - Follow aircraft in real time.
 - Visualize flight trails and altitude.
 - Detect and surface unusual aircraft states or telemetry patterns.
-- Explore airspace density and traffic patterns.
+- Explore traffic patterns.
 - Inspect airports and surrounding traffic.
 - Replay historical airspace activity as historical data becomes available.
 - Understand the airspace through visualization, telemetry, alerts, and analytics.
@@ -51,7 +51,6 @@ AETHERA combines:
 - Live visualization
 - Telemetry
 - Spatial analysis
-- Airspace density
 - Anomaly detection
 - Historical exploration
 - 3D visualization
@@ -346,7 +345,6 @@ At any moment the Explore view may show:
 - Observed aircraft
 - Selected aircraft emphasis
 - Optional trail for the selected or followed aircraft
-- Optional density layer
 - Airport markers at appropriate zoom
 - Alert emphasis on affected aircraft
 - Live statistics
@@ -706,11 +704,10 @@ They must be available without permanently covering the map.
 Optional layers:
 
 - Airports
-- Density
 - Trails
 - Alert emphasis
 
-Layer state should be obvious: the user should know whether they are looking at raw aircraft, density, or both.
+Layer state should be obvious: the user should know which optional layers are active.
 
 ### 17.4 Filter Clarity
 
@@ -863,24 +860,11 @@ A later Analytics area may include:
 
 - Observed aircraft over time
 - Altitude distribution
-- Regional density
 - Climb / descent balance
 - Alert frequency
 - Airport-area activity
 
 Charts exist to reveal structure in the airspace. They are not a dashboard of vanity metrics.
-
-### 20.3 Density
-
-Density visualization answers:
-
-> "Where is the airspace busiest?"
-
-It sits under aircraft, stays subtle, and is optional.
-
-Density is derived. It must not be presented as official air-traffic density.
-
----
 
 ## 21. History and Replay
 
@@ -1048,7 +1032,7 @@ This is a product integrity rule.
 | Category | Examples | Presentation |
 | -------- | -------- | ------------ |
 | Observed | Position, altitude, velocity, squawk, last seen | Stated as observed |
-| Derived | Climbing/descending, density, alert flags | Stated as detected or calculated |
+| Derived | Climbing/descending, alert flags | Stated as detected or calculated |
 | Estimated | Interpolated position between updates | Used for motion; not a new fix |
 | Metadata | Airline, type, airport names | Secondary; may be incomplete |
 | Unavailable | Missing altitude, unknown callsign | Explicitly unknown |
@@ -1401,7 +1385,7 @@ Richer anomaly catalog, airport traffic views, aircraft enrichment, advanced fil
 
 ### Phase 3 — Presence
 
-Density layer, live statistics quality, better regional defaults, notification control, data-density options.
+Live statistics quality, better regional defaults, notification control, data-density options.
 
 ### Phase 4 — Memory
 

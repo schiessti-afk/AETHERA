@@ -57,11 +57,6 @@ export function MapViewport() {
   const hoveredRef = useRef<string | null>(null);
   const lastFollowMoveRef = useRef(0);
   const [is3D, setIs3D] = useState(true);
-  // Density is off by default — PRODUCT_SPEC §17.3 and Design §28: it sits under the
-  // aircraft, stays subtle, and is opt-in rather than something the user must dismiss.
-  const [densityOn, setDensityOn] = useState(false);
-  const densityRef = useRef(densityOn);
-  densityRef.current = densityOn;
   const [spotter, setSpotter] = useState<SpotterStyle>(defaultSpotterStyle);
   const spotterRef = useRef(spotter);
   spotterRef.current = spotter;
@@ -91,12 +86,10 @@ export function MapViewport() {
         maplibregl,
         { MapboxOverlay },
         { IconLayer, LineLayer, TextLayer, ScatterplotLayer },
-        { HeatmapLayer },
       ] = await Promise.all([
         import("maplibre-gl"),
         import("@deck.gl/mapbox"),
         import("@deck.gl/layers"),
-        import("@deck.gl/aggregation-layers"),
       ]);
       const { Map } = maplibregl;
       if (cancelled || !container) return;
@@ -143,7 +136,7 @@ export function MapViewport() {
         const initialBounds = boundsFromMap(map);
         flightStore.setBounds(initialBounds);
         void loadAirports(map, initialBounds);
-        startRenderLoop(IconLayer, LineLayer, TextLayer, HeatmapLayer, ScatterplotLayer);
+        startRenderLoop(IconLayer, LineLayer, TextLayer, ScatterplotLayer);
 
         // An alert clicked on the Alerts route parks a camera target before navigating
         // here; claim it once the map can actually move.
@@ -205,12 +198,11 @@ export function MapViewport() {
       IconLayer: typeof import("@deck.gl/layers").IconLayer,
       LineLayer: typeof import("@deck.gl/layers").LineLayer,
       TextLayer: typeof import("@deck.gl/layers").TextLayer,
-      HeatmapLayer: typeof import("@deck.gl/aggregation-layers").HeatmapLayer,
       ScatterplotLayer: typeof import("@deck.gl/layers").ScatterplotLayer,
     ) {
       const tick = () => {
         if (cancelled) return;
-        renderFrame(IconLayer, LineLayer, TextLayer, HeatmapLayer, ScatterplotLayer);
+        renderFrame(IconLayer, LineLayer, TextLayer, ScatterplotLayer);
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -220,7 +212,6 @@ export function MapViewport() {
       IconLayer: typeof import("@deck.gl/layers").IconLayer,
       LineLayer: typeof import("@deck.gl/layers").LineLayer,
       TextLayer: typeof import("@deck.gl/layers").TextLayer,
-      HeatmapLayer: typeof import("@deck.gl/aggregation-layers").HeatmapLayer,
       ScatterplotLayer: typeof import("@deck.gl/layers").ScatterplotLayer,
     ) {
       const overlay = overlayRef.current;
@@ -317,35 +308,6 @@ export function MapViewport() {
       });
 
       const layers: import("@deck.gl/core").Layer[] = [];
-
-      // Density goes in first so it renders beneath the aircraft (Design §28). It is
-      // built from the same observed positions already on screen rather than a separate
-      // fetch, so it can never disagree with the markers drawn on top of it.
-      if (densityRef.current && points.length > 0) {
-        layers.push(
-          new HeatmapLayer<RenderPoint>({
-            id: "density",
-            data: points.filter((d) => !d.flight.onGround),
-            getPosition: (d) => d.position,
-            getWeight: 1,
-            radiusPixels: 45,
-            intensity: 1,
-            // Kept deliberately dim: the goal is to reveal where the airspace is busy,
-            // not to turn the map into a bright heatmap.
-            threshold: 0.06,
-            opacity: 0.35,
-            colorRange: [
-              [62, 224, 200, 0],
-              [62, 224, 200, 60],
-              [78, 205, 196, 110],
-              [224, 180, 74, 150],
-              [224, 122, 62, 180],
-              [224, 74, 74, 205],
-            ],
-            aggregation: "SUM",
-          }),
-        );
-      }
 
       // Airports sit below the aircraft so they read as ground anchors rather than
       // competing with live traffic (§19.3).
@@ -460,9 +422,8 @@ export function MapViewport() {
             target: [point.longitude, point.latitude] as [number, number],
             age: i / trail.length,
           }));
-          // Sits above density but below the aircraft: the trail belongs to a specific
-          // aircraft, so it must not be buried under the heatmap, nor drawn over the
-          // markers it relates to.
+          // Sits below the aircraft: the trail belongs to a specific aircraft, so it
+          // must not be drawn over the markers it relates to.
           const trailLayer = new LineLayer({
             id: "trail",
             data: segments,
@@ -562,19 +523,6 @@ export function MapViewport() {
           aria-pressed={is3D}
         >
           {is3D ? "3D" : "2D"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDensityOn((v) => !v)}
-          aria-pressed={densityOn}
-          title="Observed traffic density — derived, not official air-traffic density"
-          className={`rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] shadow-[var(--shadow-panel)] transition-colors ${
-            densityOn
-              ? "text-[var(--color-accent)]"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-          }`}
-        >
-          Density
         </button>
         <SpotterControls style={spotter} onChange={setSpotter} />
       </div>

@@ -4,7 +4,7 @@ import { KEYS, type RedisClient } from "./redis";
 /**
  * Parsed view of the live aircraft hash, shared across requests.
  *
- * Every read endpoint — stats, analytics, density, airport traffic, search — needs the
+ * Every read endpoint — stats, analytics, airport traffic, search — needs the
  * same ~10,000 aircraft, and each was independently doing `hGetAll` plus 10,000
  * `JSON.parse` calls. The underlying data only changes once per ingestion poll (~90s),
  * so that work was being repeated for no benefit.

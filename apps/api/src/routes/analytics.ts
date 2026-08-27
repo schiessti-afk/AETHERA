@@ -82,32 +82,4 @@ export const analyticsRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async
       return { hours, samples: [], count: 0 };
     }
   });
-
-  /**
-   * Positions for the density layer, thinned to what a heat/hex layer actually needs.
-   * Deliberately separate from /api/aircraft: density does not need identity, telemetry
-   * or freshness, and sending 12,000 full state objects to draw a hexagon grid would be
-   * wasteful.
-   */
-  app.get<{ Querystring: { bbox?: string } }>("/api/analytics/density", async (request) => {
-    let flights = await liveAircraft();
-
-    if (request.query.bbox) {
-      const [west, south, east, north] = request.query.bbox.split(",").map(Number);
-      if ([west, south, east, north].every((v) => Number.isFinite(v))) {
-        flights = flights.filter((f) =>
-          inBoundingBox(f.latitude, f.longitude, { west, south, east, north }),
-        );
-      }
-    }
-
-    const points = flights
-      .filter((f) => !f.onGround)
-      .map((f) => [
-        Math.round(f.longitude * 1000) / 1000,
-        Math.round(f.latitude * 1000) / 1000,
-      ]);
-
-    return { points, count: points.length };
-  });
 };

@@ -119,12 +119,6 @@ export function fetchAnalyticsHistory(
   return getJson(`/api/analytics/history?hours=${hours}`);
 }
 
-export function fetchDensity(
-  bbox?: string,
-): Promise<{ points: Array<[number, number]>; count: number }> {
-  return getJson(`/api/analytics/density${bbox ? `?bbox=${bbox}` : ""}`);
-}
-
 export interface AnomalyFeed {
   anomalies: Anomaly[];
   /** Count of currently-open detections, before any filter is applied. */

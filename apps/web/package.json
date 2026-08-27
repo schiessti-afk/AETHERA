@@ -16,7 +16,6 @@
     "@aethera/types": "workspace:*",
     "@aethera/ui": "workspace:*",
     "@aethera/validation": "workspace:*",
-    "@deck.gl/aggregation-layers": "^9.3.10",
     "@deck.gl/core": "^9.3.10",
     "@deck.gl/layers": "^9.3.10",
     "@deck.gl/mapbox": "^9.3.10",
