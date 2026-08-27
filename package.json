@@ -5,14 +5,17 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "pnpm": ">=9"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "predev": "node scripts/setup.mjs --infra",
     "dev": "pnpm --parallel --filter @aethera/web --filter @aethera/api --filter @aethera/ingestion dev",
     "dev:web": "pnpm --filter @aethera/web dev",
     "dev:api": "pnpm --filter @aethera/api dev",
     "dev:ingestion": "pnpm --filter @aethera/ingestion dev",
-    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
+    "dev:infra": "node scripts/setup.mjs --infra",
     "build": "pnpm -r build",
     "start": "pnpm -r start",
     "typecheck": "pnpm -r typecheck",
