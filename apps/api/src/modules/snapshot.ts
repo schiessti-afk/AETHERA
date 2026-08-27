@@ -59,6 +59,10 @@ class SnapshotCache {
     this.key = stamp;
     return flights;
   }
+
+  currentKey(): string | null {
+    return this.key;
+  }
 }
 
 let cache: SnapshotCache | null = null;
@@ -72,4 +76,10 @@ export function createSnapshotCache(redis: RedisClient): SnapshotCache {
 export function liveAircraft(): Promise<FlightState[]> {
   if (!cache) throw new Error("snapshot cache not initialised");
   return cache.get();
+}
+
+/** Ingestion stamp the current live snapshot was built from, or null. */
+export function liveStamp(): string | null {
+  if (!cache) throw new Error("snapshot cache not initialised");
+  return cache.currentKey();
 }

@@ -54,6 +54,24 @@ export interface AircraftMetadata {
   operator: string | null;
 }
 
+/**
+ * Derived from ICAO type designator, not from the transponder. Unknown when
+ * registry metadata is missing. Used by the spotter layer (POSTMVP §1).
+ */
+export type AircraftCategory =
+  | "widebody"
+  | "narrowbody"
+  | "turboprop"
+  | "military"
+  | "ga"
+  | "unknown";
+
+/** Compact registry fields joined onto live icao24s for filtering and map style. */
+export interface RegistryEntry {
+  typeCode: string | null;
+  registration: string | null;
+}
+
 export interface AircraftQuery {
   west?: number;
   south?: number;

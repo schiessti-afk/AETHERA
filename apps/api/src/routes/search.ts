@@ -1,27 +1,33 @@
 import type { FastifyPluginAsync } from "fastify";
+import { identityMatches, parseIdentityPattern } from "@aethera/flight-engine";
 import { type RedisClient } from "../modules/redis";
 import { liveAircraft } from "../modules/snapshot";
+import { liveRegistry } from "../modules/registry";
 import { pool } from "../modules/postgres";
-import type { FlightState } from "@aethera/types";
 
-export const searchRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (
-  app,
-  opts,
-) => {
+export const searchRoutes: FastifyPluginAsync<{ redis: RedisClient }> = async (app) => {
   app.get<{ Querystring: { q?: string } }>("/api/search", async (request) => {
     const q = (request.query.q ?? "").trim();
     if (q.length < 2) {
       return { aircraft: [], airports: [] };
     }
 
-    const needle = q.toUpperCase();
+    const pattern = parseIdentityPattern(q);
+    const registry = await liveRegistry();
     const aircraft = (await liveAircraft())
-      .filter(
-        (flight) =>
-          flight.icao24.toUpperCase().includes(needle) ||
-          flight.callsign?.toUpperCase().includes(needle),
+      .filter((flight) =>
+        identityMatches(pattern, [
+          flight.icao24,
+          flight.callsign,
+          registry.get(flight.icao24)?.registration,
+        ]),
       )
-      .slice(0, 20);
+      .slice(0, 20)
+      .map((flight) => ({
+        ...flight,
+        registration: registry.get(flight.icao24)?.registration ?? null,
+        typeCode: registry.get(flight.icao24)?.typeCode ?? null,
+      }));
 
     // Ranking matters now that the directory holds thousands of airports rather than a
     // seed of ten: ordering by name alone put "Groton New London Airport" above

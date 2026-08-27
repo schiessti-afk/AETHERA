@@ -7,6 +7,7 @@ import type {
   FlightSession,
   FlightState,
   HistorySummary,
+  RegistryEntry,
   SystemStats,
   TrackHourExpanded,
 } from "@aethera/types";
@@ -32,6 +33,13 @@ export function fetchAircraftDetail(
   icao24: string,
 ): Promise<(Partial<FlightState> & { metadata: AircraftMetadata | null; observed?: boolean })> {
   return getJson(`/api/aircraft/${encodeURIComponent(icao24)}`);
+}
+
+export function fetchRegistry(): Promise<{
+  index: Record<string, RegistryEntry>;
+  count: number;
+}> {
+  return getJson("/api/registry");
 }
 
 export interface TrailPointDto {
@@ -137,7 +145,7 @@ export function fetchAnomalies(params?: {
 }
 
 export function search(q: string): Promise<{
-  aircraft: FlightState[];
+  aircraft: Array<FlightState & { registration?: string | null; typeCode?: string | null }>;
   airports: Array<{ icao: string; iata?: string; name: string }>;
 }> {
   return getJson(`/api/search?q=${encodeURIComponent(q)}`);

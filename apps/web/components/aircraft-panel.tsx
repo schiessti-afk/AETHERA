@@ -5,7 +5,7 @@ import { X, Locate, Route, Crosshair } from "lucide-react";
 import type { AircraftMetadata, FlightState } from "@aethera/types";
 import { fetchAircraftDetail } from "@/lib/api";
 import { Panel } from "@aethera/ui";
-import { dataAgeSeconds } from "@aethera/flight-engine";
+import { classifyTypeCode, dataAgeSeconds, isRareType, CATEGORY_LABEL } from "@aethera/flight-engine";
 import { flightStore } from "@/lib/flight-store";
 import { useFlightStore } from "@/hooks/use-flight-store";
 import {
@@ -100,6 +100,7 @@ export function AircraftPanel({
   const now = clockMs ?? Date.now();
   const ageS = dataAgeSeconds(flight.lastSeen, now);
   const status = flight.onGround ? "ON GROUND" : ageS > 180 ? "STALE" : "AIRBORNE";
+  const typeCategory = classifyTypeCode(metadata?.typeCode);
 
   return (
     <Panel
@@ -152,7 +153,27 @@ export function AircraftPanel({
       {metadata && (metadata.registration || metadata.typeCode || metadata.operator) ? (
         <div className="mb-3 grid grid-cols-2 gap-3 text-[13px]">
           <Field label="Registration" value={formatOrDash(metadata.registration)} />
-          <Field label="Type" value={formatOrDash(metadata.typeCode)} />
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">
+              Type
+            </div>
+            <div className="flex items-baseline gap-2 tabular-nums text-[15px] text-[var(--color-text)]">
+              <span>{formatOrDash(metadata.typeCode)}</span>
+              {isRareType(metadata.typeCode) ? (
+                <span
+                  className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-warning)]"
+                  title="Flagged typecode — uncommon ICAO designator, not a count of airframes"
+                >
+                  Rare
+                </span>
+              ) : null}
+            </div>
+            {typeCategory !== "unknown" && typeCategory !== "narrowbody" ? (
+              <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">
+                {CATEGORY_LABEL[typeCategory]}
+              </div>
+            ) : null}
+          </div>
           {metadata.operator ? (
             <div className="col-span-2">
               <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">

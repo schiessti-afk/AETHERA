@@ -131,3 +131,13 @@ export {
   type TrackSample,
   type InterpolatedTrack,
 } from "./track-interpolate";
+export {
+  SPOTTER_CATEGORIES,
+  CATEGORY_LABEL,
+  classifyTypeCode,
+  identityMatches,
+  isRareType,
+  normalizeTypeCode,
+  parseIdentityPattern,
+  type IdentityPattern,
+} from "./spotter";

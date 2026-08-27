@@ -2,27 +2,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Airport, BoundingBox, FlightState } from "@aethera/types";
-import { dataAgeSeconds, interpolatePosition, positionConfidence } from "@aethera/flight-engine";
+import { classifyTypeCode, dataAgeSeconds, interpolatePosition, isRareType, positionConfidence } from "@aethera/flight-engine";
 import { mapStyleUrl } from "@/lib/config";
 import { flightStore } from "@/lib/flight-store";
 import { useFlightConnection, useFlightStore } from "@/hooks/use-flight-store";
+import { useAircraftRegistry } from "@/hooks/use-aircraft-registry";
 import { AIRCRAFT_ICON_ATLAS, AIRCRAFT_ICON_MAPPING } from "@/lib/aircraft-icon";
 import {
   AIRPORT_MIN_ZOOM,
   COLOR_AIRPORT,
-  COLOR_DEFAULT,
-  COLOR_GROUND,
-  COLOR_HOVER,
   COLOR_LABEL,
   COLOR_SELECTED,
-  COLOR_STALE,
   LABEL_MAX_VISIBLE,
   LABEL_MIN_ZOOM,
-  SEVERITY_COLOR,
+  aircraftFill,
+  aircraftSize,
   iconSizeForZoom,
 } from "@/lib/map-style";
 import { AircraftPanel } from "@/components/aircraft-panel";
 import { FilterBar, type Filters, defaultFilters, applyFilters } from "@/components/filter-bar";
+import {
+  SpotterControls,
+  SpotterLegend,
+  defaultSpotterStyle,
+  type SpotterStyle,
+} from "@/components/spotter-controls";
 import { CommandPalette } from "@/components/command-palette";
 import { fetchAirports } from "@/lib/api";
 import { AirportPeek } from "@/components/airport-peek";
@@ -58,6 +62,10 @@ export function MapViewport() {
   const [densityOn, setDensityOn] = useState(false);
   const densityRef = useRef(densityOn);
   densityRef.current = densityOn;
+  const [spotter, setSpotter] = useState<SpotterStyle>(defaultSpotterStyle);
+  const spotterRef = useRef(spotter);
+  spotterRef.current = spotter;
+  const registryRef = useAircraftRegistry();
   // Airports in view, fetched per viewport. Kept in a ref because the render loop reads
   // them every frame and they must not drive React re-renders.
   const airportsRef = useRef<Airport[]>([]);
@@ -222,7 +230,12 @@ export function MapViewport() {
       const now = Date.now();
       const { aircraft, selected, followed, hovered, trailVisible, alerted } =
         flightStore.getSnapshot();
-      const visible = applyFilters(Array.from(aircraft.values()), filtersRef.current);
+      const visible = applyFilters(
+        Array.from(aircraft.values()),
+        filtersRef.current,
+        registryRef.current,
+      );
+      const spotterStyle = spotterRef.current;
 
       type RenderPoint = {
         flight: FlightState;
@@ -255,12 +268,14 @@ export function MapViewport() {
         sizeUnits: "pixels",
         getPosition: (d) => d.position,
         getSize: (d) => {
-          if (d.flight.icao24 === selected || d.flight.icao24 === followed) {
-            return baseSize + 8;
-          }
-          // Alerted aircraft get a modest size bump so they stay findable in dense
-          // traffic without turning into the loudest thing on the map (Design §25).
-          return alerted.has(d.flight.icao24) ? baseSize + 5 : baseSize;
+          const typeCode = registryRef.current.get(d.flight.icao24)?.typeCode ?? null;
+          return aircraftSize({
+            base: baseSize,
+            selected: d.flight.icao24 === selected || d.flight.icao24 === followed,
+            alerted: alerted.has(d.flight.icao24),
+            rare: isRareType(typeCode),
+            highlightRare: spotterStyle.highlightRare,
+          });
         },
         // deck.gl IconLayer rotates counter-clockwise from the icon's own up axis; our
         // glyph is drawn north-up and `heading` is compass degrees, hence the negation.
@@ -269,17 +284,20 @@ export function MapViewport() {
         // sign would have drawn those north-west aircraft at 51°, i.e. north-east.
         getAngle: (d) => 360 - (d.flight.heading ?? 0),
         getColor: (d) => {
-          const alpha = Math.round(255 * (d.flight.onGround ? 0.55 : 1) * (d.stale ? 0.6 : 1) * Math.max(0.35, d.confidence));
-          if (d.flight.icao24 === selected || d.flight.icao24 === followed) {
-            return [...COLOR_SELECTED, alpha];
-          }
-          if (d.flight.icao24 === hovered) return [...COLOR_HOVER, alpha];
-          // Alert state outranks stale/ground styling: an aircraft with something open
-          // against it should not be visually demoted for also being quiet (§11.3).
-          const severity = alerted.get(d.flight.icao24);
-          if (severity) return [...SEVERITY_COLOR[severity], Math.max(alpha, 200)];
-          if (d.stale) return [...COLOR_STALE, alpha];
-          return [...(d.flight.onGround ? COLOR_GROUND : COLOR_DEFAULT), alpha];
+          const typeCode = registryRef.current.get(d.flight.icao24)?.typeCode ?? null;
+          return aircraftFill({
+            onGround: d.flight.onGround,
+            stale: d.stale,
+            confidence: d.confidence,
+            selected: d.flight.icao24 === selected || d.flight.icao24 === followed,
+            hovered: d.flight.icao24 === hovered,
+            severity: alerted.get(d.flight.icao24),
+            category: classifyTypeCode(typeCode),
+            rare: isRareType(typeCode),
+            categoryColors: spotterStyle.categoryColors,
+            highlightRare: spotterStyle.highlightRare,
+            emphasized: spotterStyle.emphasized,
+          });
         },
         updateTriggers: {
           getColor: [selected, followed, hovered, alerted],
@@ -558,7 +576,14 @@ export function MapViewport() {
         >
           Density
         </button>
+        <SpotterControls style={spotter} onChange={setSpotter} />
       </div>
+
+      {spotter.categoryColors || spotter.highlightRare ? (
+        <div className="absolute bottom-3 left-1/2 z-[var(--z-controls)] -translate-x-1/2">
+          <SpotterLegend style={spotter} onChange={setSpotter} />
+        </div>
+      ) : null}
 
       {peeked && !selected ? (
         <div className="absolute bottom-3 left-3 z-[var(--z-panels)]">

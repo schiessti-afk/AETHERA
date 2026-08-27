@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import type { FlightState } from "@aethera/types";
+import type { FlightState, RegistryEntry } from "@aethera/types";
+import { identityMatches, parseIdentityPattern } from "@aethera/flight-engine";
 
 export type VerticalFilter = "any" | "climbing" | "descending" | "level";
 
@@ -12,6 +13,8 @@ export interface Filters {
   showGround: boolean;
   squawk: string;
   vertical: VerticalFilter;
+  /** Wildcard / regex over callsign, ICAO24, and registration. */
+  identity: string;
 }
 
 export const defaultFilters: Filters = {
@@ -20,6 +23,7 @@ export const defaultFilters: Filters = {
   showGround: true,
   squawk: "",
   vertical: "any",
+  identity: "",
 };
 
 const FT_TO_M = 0.3048;
@@ -27,13 +31,28 @@ const MPS_TO_FPM = 196.85;
 /** Below this rate an aircraft reads as holding level rather than climbing or descending. */
 const LEVEL_FPM = 300;
 
-export function applyFilters(aircraft: FlightState[], filters: Filters): FlightState[] {
+export function applyFilters(
+  aircraft: FlightState[],
+  filters: Filters,
+  registry?: Map<string, RegistryEntry>,
+): FlightState[] {
   const squawk = filters.squawk.trim();
+  const pattern = parseIdentityPattern(filters.identity);
 
   return aircraft.filter((flight) => {
     if (!filters.showGround && flight.onGround) return false;
 
     if (squawk && flight.squawk !== squawk) return false;
+
+    if (pattern.kind !== "all") {
+      // Invalid patterns do not hide traffic — the input shows the error instead.
+      if (pattern.kind !== "invalid") {
+        const registration = registry?.get(flight.icao24)?.registration;
+        if (!identityMatches(pattern, [flight.icao24, flight.callsign, registration])) {
+          return false;
+        }
+      }
+    }
 
     if (filters.vertical !== "any") {
       // An unreported vertical rate is unknown, not level — filtering on it would
@@ -64,12 +83,15 @@ export function FilterBar({
   onChange: (filters: Filters) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const identityPattern = parseIdentityPattern(filters.identity);
+  const identityInvalid = identityPattern.kind === "invalid";
   const active =
     filters.altitudeMinFt != null ||
     filters.altitudeMaxFt != null ||
     !filters.showGround ||
     filters.squawk.trim() !== "" ||
-    filters.vertical !== "any";
+    filters.vertical !== "any" ||
+    filters.identity.trim() !== "";
 
   return (
     <div className="relative">
@@ -86,8 +108,29 @@ export function FilterBar({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-[calc(100%+6px)] w-56 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[11px] shadow-[var(--shadow-panel)]">
-          <label className="mb-2 flex items-center justify-between text-[var(--color-text-muted)]">
+        <div className="absolute left-0 top-[calc(100%+6px)] w-64 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[11px] shadow-[var(--shadow-panel)]">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">
+            Identity
+          </div>
+          <input
+            type="text"
+            placeholder="TAP*  ·  *834A  ·  /BAW\d+/"
+            value={filters.identity}
+            onChange={(e) => onChange({ ...filters, identity: e.target.value })}
+            aria-invalid={identityInvalid}
+            className={`w-full rounded-[var(--radius-sm)] border bg-[var(--color-surface-elevated)] px-2 py-1 text-[var(--color-text)] ${
+              identityInvalid
+                ? "border-[var(--color-danger)]"
+                : "border-[var(--color-border)]"
+            }`}
+          />
+          <p className="mt-1 text-[10px] text-[var(--color-text-subtle)]">
+            {identityInvalid
+              ? "Invalid pattern — traffic is not hidden"
+              : "Callsign, ICAO24, or registration. * ? or /regex/"}
+          </p>
+
+          <label className="mb-2 mt-3 flex items-center justify-between text-[var(--color-text-muted)]">
             <span>Show ground traffic</span>
             <input
               type="checkbox"

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FlightState } from "@aethera/types";
+import { isRareType } from "@aethera/flight-engine";
 import { search as searchApi } from "@/lib/api";
 import { formatAltitude, formatOrDash } from "@/lib/format";
 
@@ -22,7 +23,9 @@ export function CommandPalette({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [aircraft, setAircraft] = useState<FlightState[]>([]);
+  const [aircraft, setAircraft] = useState<
+    Array<FlightState & { registration?: string | null; typeCode?: string | null }>
+  >([]);
   const [airports, setAirports] = useState<AirportResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -96,7 +99,7 @@ export function CommandPalette({
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Callsign, ICAO24, or airport"
+              placeholder="Callsign, ICAO24, registration, or airport"
               className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3 text-sm text-[var(--color-text)] outline-none"
             />
 
@@ -123,6 +126,16 @@ export function CommandPalette({
                     <span className="ml-2 text-[var(--color-text-subtle)]">
                       {flight.icao24.toUpperCase()}
                     </span>
+                    {flight.registration ? (
+                      <span className="ml-2 text-[var(--color-text-muted)]">
+                        {flight.registration}
+                      </span>
+                    ) : null}
+                    {isRareType(flight.typeCode) ? (
+                      <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-[var(--color-warning)]">
+                        Rare
+                      </span>
+                    ) : null}
                   </span>
                   <span className="text-[var(--color-text-muted)]">
                     {formatAltitude(flight.altitude)}

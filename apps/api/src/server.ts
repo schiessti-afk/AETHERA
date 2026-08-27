@@ -11,6 +11,7 @@ import { searchRoutes } from "./routes/search";
 import { anomalyRoutes } from "./routes/anomalies";
 import { analyticsRoutes } from "./routes/analytics";
 import { historyRoutes } from "./routes/history";
+import { registryRoutes } from "./routes/registry";
 import { websocketRoutes } from "./websocket/gateway";
 
 async function main() {
@@ -28,6 +29,7 @@ async function main() {
   await app.register(anomalyRoutes, { redis });
   await app.register(analyticsRoutes, { redis });
   await app.register(historyRoutes);
+  await app.register(registryRoutes);
   await app.register(websocketRoutes, { redis });
 
   try {
